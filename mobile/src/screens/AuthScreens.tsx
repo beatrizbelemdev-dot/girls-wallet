@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, Text, View } from 'react-native';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { Eye, EyeOff, Globe, Mail, Wallet } from 'lucide-react-native';
@@ -12,6 +12,18 @@ import { colors } from '../theme';
 
 WebBrowser.maybeCompleteAuthSession();
 type AuthNavigation = NativeStackNavigationProp<RootStackParamList>;
+const googleClientIds = {
+  web: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+  ios: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+  android: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+};
+const googleAvailable = Platform.OS === 'ios'
+  ? Boolean(googleClientIds.ios)
+  : Platform.OS === 'android'
+    ? Boolean(googleClientIds.android)
+    : Platform.OS === 'web'
+      ? Boolean(googleClientIds.web)
+      : false;
 
 function AuthBrand() {
   return <View style={{ alignItems: 'flex-end', marginTop: 14 }}><View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}><Wallet size={20} color={colors.primary} /><Text style={{ color: colors.primary, fontSize: 19, fontWeight: '700' }}>Girls Wallet</Text></View></View>;
@@ -37,25 +49,6 @@ export function LoginScreen({
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-  });
-
-  useEffect(() => {
-    if (response?.type !== 'success') return;
-    const idToken = response.authentication?.idToken ?? response.params?.id_token;
-    if (!idToken) {
-      setError('O Google não retornou um token de acesso válido. Confira a configuração OAuth.');
-      return;
-    }
-    setBusy(true);
-    void signInWithGoogleIdToken(idToken)
-      .then(() => setError(''))
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Falha na autenticação Google.'))
-      .finally(() => setBusy(false));
-  }, [response]);
 
   async function submit() {
     if (!email.trim() || !password) {
@@ -84,19 +77,59 @@ export function LoginScreen({
       <Button title="Entrar" onPress={() => void submit()} loading={busy} />
       <Button title="Esqueci minha senha" variant="text" onPress={() => navigation.navigate('ResetPassword')} />
       <View style={{ gap: 12, alignItems: 'center' }}>
-        <Text style={{ color: colors.muted, fontSize: 12 }}>ou acesse com sua conta</Text>
-        <Button title="Continuar com Google" variant="secondary" icon={<Globe color={colors.primary} size={19} />} onPress={() => {
-          if (!firebaseReady) setError('Configure o Firebase e os IDs OAuth do Google antes de conectar uma conta.');
-          else if (!request) setError('A autenticação Google ainda está sendo preparada.');
-          else void promptAsync();
-        }} />
-        <Button title="Explorar sem conta (modo local)" variant="text" onPress={enterLocalMode} />
+        {googleAvailable ? (
+          <>
+            <Text style={{ color: colors.muted, fontSize: 12 }}>ou acesse com sua conta</Text>
+            <GoogleSignInButton onError={setError} />
+          </>
+        ) : (
+          <Notice tone="amber">Login Google não configurado neste dispositivo. Você pode testar o app com os dados de demonstração.</Notice>
+        )}
+        <Button title="Explorar com dados de demonstração" variant="text" onPress={enterLocalMode} />
       </View>
       <Pressable onPress={() => navigation.navigate('SignUp')} style={{ alignItems: 'center', paddingVertical: 5 }}>
         <Text style={{ color: colors.muted, fontSize: 13 }}>Ainda não tem conta? <Text style={{ color: colors.primary, fontWeight: '700' }}>Criar conta</Text></Text>
       </Pressable>
       <Text style={{ color: colors.muted, fontSize: 11, textAlign: 'center' }}>Seus dados protegidos. Seus planos em primeiro lugar.</Text>
     </Screen>
+  );
+}
+
+function GoogleSignInButton({ onError }: { onError: (message: string) => void }) {
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    webClientId: googleClientIds.web,
+    iosClientId: googleClientIds.ios,
+    androidClientId: googleClientIds.android,
+  });
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (response?.type !== 'success') return;
+    const idToken = response.authentication?.idToken ?? response.params?.id_token;
+    if (!idToken) {
+      onError('O Google não retornou um token de acesso válido. Confira a configuração OAuth.');
+      return;
+    }
+    setBusy(true);
+    void signInWithGoogleIdToken(idToken)
+      .then(() => onError(''))
+      .catch((reason: unknown) => onError(reason instanceof Error ? reason.message : 'Falha na autenticação Google.'))
+      .finally(() => setBusy(false));
+  }, [onError, response]);
+
+  return (
+    <Button
+      title="Continuar com Google"
+      variant="secondary"
+      icon={<Globe color={colors.primary} size={19} />}
+      loading={busy}
+      disabled={!request}
+      onPress={() => {
+        if (!firebaseReady) onError('Configure o Firebase antes de conectar uma conta Google.');
+        else if (!request) onError('A autenticação Google ainda está sendo preparada.');
+        else void promptAsync();
+      }}
+    />
   );
 }
 
