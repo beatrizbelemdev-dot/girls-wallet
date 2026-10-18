@@ -8,6 +8,8 @@ import {
   FileUp,
   HeartPulse,
   House,
+  Lock,
+  Pencil,
   Plane,
   Plus,
   ShoppingBag,
@@ -22,6 +24,7 @@ import { Button, CardBox, Field, Header, Notice, PageTitle, ProgressBar, Screen,
 import { useWallet } from '../contexts/WalletContext';
 import type { Expense } from '../data/types';
 import type { RootStackParamList } from '../navigation';
+import { useDisplayName } from '../services/firebase';
 import { colors, formatCurrency, formatDate } from '../theme';
 
 type Navigation = NativeStackNavigationProp<RootStackParamList>;
@@ -38,6 +41,15 @@ function CategoryIcon({ name, color = colors.primary }: { name: string; color?: 
   }
 }
 
+/** Despesas manuais abrem para edição; as importadas de fatura PDF (com `statementId`) ficam somente leitura. */
+function openExpense(navigation: Navigation, expense: Expense) {
+  if (expense.statementId) {
+    Alert.alert('Despesa de fatura', 'Compras importadas de uma fatura PDF não podem ser editadas. Se precisar, exclua a compra e registre-a manualmente.');
+    return;
+  }
+  navigation.navigate('ExpenseForm', { id: expense.id });
+}
+
 function ExpenseRow({ expense, onPress, onDelete }: { expense: Expense; onPress: () => void; onDelete?: () => void }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 }}>
@@ -46,9 +58,12 @@ function ExpenseRow({ expense, onPress, onDelete }: { expense: Expense; onPress:
       </View>
       <Pressable style={{ flex: 1, gap: 4 }} onPress={onPress}>
         <Text style={{ color: colors.ink, fontWeight: '600' }}>{expense.description}</Text>
-        <Text style={{ color: colors.muted, fontSize: 11 }}>{expense.category} · {expense.payment} · {formatDate(expense.date)}</Text>
+        <Text style={{ color: colors.muted, fontSize: 11 }}>{expense.category} · {expense.payment} · {formatDate(expense.date)}{expense.statementId ? ' · Fatura' : ''}</Text>
       </Pressable>
       <Text style={{ color: colors.ink, fontWeight: '700' }}>{formatCurrency(expense.amount)}</Text>
+      <Pressable onPress={onPress} hitSlop={8} accessibilityLabel={expense.statementId ? 'Despesa de fatura, não editável' : 'Editar despesa'}>
+        {expense.statementId ? <Lock size={16} color={colors.muted} /> : <Pencil size={16} color={colors.primary} />}
+      </Pressable>
       {onDelete ? <Pressable onPress={onDelete} hitSlop={8}><Trash2 size={17} color={colors.muted} /></Pressable> : null}
     </View>
   );
@@ -57,6 +72,7 @@ function ExpenseRow({ expense, onPress, onDelete }: { expense: Expense; onPress:
 export function HomeScreen() {
   const navigation = useNavigation<Navigation>();
   const { settings, goals, expenses, offline, syncError, demoMode } = useWallet();
+  const accountName = useDisplayName();
   const income = settings?.monthlyIncome ?? 0;
   const fixed = settings?.fixedExpenses ?? 0;
   const credit = expenses.filter((expense) => expense.payment === 'Crédito').reduce((sum, expense) => sum + expense.amount, 0);
@@ -68,11 +84,12 @@ export function HomeScreen() {
   return (
     <Screen>
       <Header action={<Pressable accessibilityLabel="Notificações" onPress={() => navigation.navigate('Notifications')}><Bell size={21} color={colors.ink} /></Pressable>} />
-      <PageTitle title={`Olá, ${settings?.name ? settings.name.split(' ')[0] : 'por aqui'} ☀️`} subtitle="Outubro de 2026 · Seu mês em equilíbrio" />
+      <PageTitle title={`Olá, ${settings?.nickname || (settings?.name || accountName)?.split(' ')[0] || 'por aqui'} ☀️`} subtitle="Outubro de 2026 · Seu mês em equilíbrio" />
       {demoMode ? <Notice tone="amber">Modo local de demonstração. Estes são dados de exemplo; ficam neste aparelho e não são sincronizados com sua conta.</Notice> : null}
       {offline ? <Notice tone="amber">Sem conexão. Seus dados estão salvos neste dispositivo e serão sincronizados quando você voltar à internet.</Notice> : null}
       {syncError ? <Notice tone="amber">Falha na sincronização: {syncError}</Notice> : null}
-      {!settings ? <Pressable onPress={() => navigation.navigate('Income')}><Notice>Comece pelo seu orçamento: adicione sua renda mensal e os valores que deseja reservar.</Notice></Pressable> : null}
+      {!demoMode && settings?.nickname === undefined ? <Pressable onPress={() => navigation.navigate('ProfileEdit')}><Notice>Quer ser chamada por um apelido? Toque aqui para escolher como prefere ser chamada.</Notice></Pressable> : null}
+      {!settings?.monthlyIncome ? <Pressable onPress={() => navigation.navigate('Income')}><Notice>Comece pelo seu orçamento: adicione sua renda mensal e os valores que deseja reservar.</Notice></Pressable> : null}
       <CardBox style={{ backgroundColor: colors.rose, borderWidth: 0 }}>
         <Text style={{ color: colors.primary, fontWeight: '700' }}>Você ainda pode gastar</Text>
         <Text style={{ color: colors.ink, fontSize: 38, fontWeight: '700' }}>{formatCurrency(available)}</Text>
@@ -108,7 +125,7 @@ export function HomeScreen() {
       ) : null}
       <CardBox>
         <SectionTitle>Atividade recente</SectionTitle>
-        {expenses.slice(0, 3).map((expense) => <ExpenseRow key={expense.id} expense={expense} onPress={() => navigation.navigate('ExpenseForm', { id: expense.id })} />)}
+        {expenses.slice(0, 3).map((expense) => <ExpenseRow key={expense.id} expense={expense} onPress={() => openExpense(navigation, expense)} />)}
       </CardBox>
     </Screen>
   );
@@ -166,7 +183,7 @@ export function ExpenseListScreen() {
             <ExpenseRow
               key={expense.id}
               expense={expense}
-              onPress={() => navigation.navigate('ExpenseForm', { id: expense.id })}
+              onPress={() => openExpense(navigation, expense)}
               onDelete={() => confirmDelete(expense)}
             />
           ))}
@@ -266,15 +283,17 @@ export function ReportsScreen() {
 export function ProfileScreen() {
   const navigation = useNavigation<Navigation>();
   const { settings, offline, syncError } = useWallet();
+  const accountName = useDisplayName();
   return (
     <Screen>
       <Header />
       <PageTitle title="Seu espaço, do seu jeito." subtitle="Conta e configurações" />
       <CardBox style={{ backgroundColor: colors.roseLight, borderWidth: 0, alignItems: 'center', paddingVertical: 25 }}>
         <View style={{ width: 62, height: 62, borderRadius: 31, backgroundColor: colors.rose, justifyContent: 'center', alignItems: 'center' }}><Wallet size={26} color={colors.primary} /></View>
-        <Text style={{ color: colors.ink, fontSize: 18, fontWeight: '700' }}>{settings?.name ?? 'Marina Silva'}</Text>
-        <Text style={{ color: colors.muted }}>Conta pessoal</Text>
+        <Text style={{ color: colors.ink, fontSize: 18, fontWeight: '700' }}>{settings?.name || accountName || 'Sua conta'}</Text>
+        <Text style={{ color: colors.muted }}>{settings?.nickname ? `Chamada de ${settings.nickname}` : 'Conta pessoal'}</Text>
       </CardBox>
+      <ProfileLink title="Editar perfil" subtitle="Nome e como prefere ser chamada" icon={<Pencil size={19} color={colors.primary} />} onPress={() => navigation.navigate('ProfileEdit')} />
       {offline ? <Notice tone="amber">Modo offline: você pode consultar e editar seus dados. A sincronização será retomada quando houver conexão.</Notice> : null}
       {syncError ? <Notice tone="amber">Não foi possível sincronizar: {syncError}</Notice> : null}
       <ProfileLink title="Salário e renda" subtitle="Atualize sua renda mensal" icon={<CircleDollarSign size={19} color={colors.primary} />} onPress={() => navigation.navigate('Income')} />

@@ -4,10 +4,6 @@ import { createServer } from 'node:http';
 import cors from 'cors';
 import express, { type ErrorRequestHandler } from 'express';
 import multer from 'multer';
-import { applicationDefault, getApps, initializeApp } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
-import { getMessaging } from 'firebase-admin/messaging';
 import { PDFParse } from 'pdf-parse';
 import { parseStatementText } from './parser.js';
 
@@ -22,8 +18,11 @@ const upload = multer({
 app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',').map((value) => value.trim()) ?? false }));
 app.use(express.json({ limit: '32kb' }));
 
-function adminApp() {
+// O firebase-admin é carregado sob demanda: a análise de PDF em modo de desenvolvimento
+// funciona sem ele (e em versões de Node que ele não suporta).
+async function adminApp() {
   if (!process.env.FIREBASE_PROJECT_ID || !process.env.GOOGLE_APPLICATION_CREDENTIALS) return undefined;
+  const { applicationDefault, getApps, initializeApp } = await import('firebase-admin/app');
   return getApps()[0] ?? initializeApp({
     credential: applicationDefault(),
     projectId: process.env.FIREBASE_PROJECT_ID,
@@ -33,9 +32,10 @@ function adminApp() {
 async function verifiedUid(authorization: string | undefined): Promise<string> {
   const token = authorization?.match(/^Bearer (.+)$/)?.[1];
   if (!token) throw Object.assign(new Error('Autenticação necessária.'), { status: 401 });
-  const appInstance = adminApp();
+  const appInstance = await adminApp();
   if (!appInstance) throw Object.assign(new Error('Firebase Admin não configurado para operações push.'), { status: 503 });
   try {
+    const { getAuth } = await import('firebase-admin/auth');
     const decoded = await getAuth(appInstance).verifyIdToken(token);
     return decoded.uid;
   } catch {
@@ -49,7 +49,9 @@ app.get('/health', (_request, response) => {
 
 app.post('/api/statements/analyze', upload.single('file'), async (request, response, next) => {
   try {
-    await verifiedUid(request.header('authorization'));
+    // Modo de desenvolvimento: ALLOW_ANONYMOUS_ANALYZE=true dispensa o login só nesta rota,
+    // para rodar a importação de PDF sem credenciais do Firebase. Mantenha desligado em produção.
+    if (process.env.ALLOW_ANONYMOUS_ANALYZE !== 'true') await verifiedUid(request.header('authorization'));
     const file = request.file;
     if (!file) {
       response.status(400).json({ message: 'Selecione um arquivo PDF para análise.' });
@@ -107,12 +109,13 @@ app.post('/api/push/register', async (request, response, next) => {
       response.status(400).json({ message: 'Token de dispositivo ou plataforma inválidos.' });
       return;
     }
-    const appInstance = adminApp();
+    const appInstance = await adminApp();
     if (!appInstance) {
       response.status(503).json({ message: 'Firebase Admin não configurado.' });
       return;
     }
     const tokenId = createHash('sha256').update(token).digest('hex');
+    const { getFirestore } = await import('firebase-admin/firestore');
     await getFirestore(appInstance).doc(`users/${uid}/devices/${tokenId}`).set({
       token,
       platform,
@@ -132,11 +135,13 @@ app.post('/api/push/budget-alert', async (request, response, next) => {
       response.status(400).json({ message: 'Dados de orçamento inválidos ou limite ainda não ultrapassado.' });
       return;
     }
-    const appInstance = adminApp();
+    const appInstance = await adminApp();
     if (!appInstance) {
       response.status(503).json({ message: 'Firebase Admin não configurado para enviar notificações.' });
       return;
     }
+    const { getFirestore } = await import('firebase-admin/firestore');
+    const { getMessaging } = await import('firebase-admin/messaging');
     const devices = await getFirestore(appInstance).collection(`users/${uid}/devices`).get();
     const tokens = devices.docs.map((device) => device.data().token).filter((token): token is string => typeof token === 'string');
     if (!tokens.length) {

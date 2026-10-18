@@ -10,3 +10,4 @@ coverage/
 .expo/
 web-build/
 firebase-debug.log
+.idea/

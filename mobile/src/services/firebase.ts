@@ -4,6 +4,7 @@ import {
   getAuth,
   GoogleAuthProvider,
   initializeAuth,
+  onIdTokenChanged,
   sendPasswordResetEmail,
   signInWithCredential,
   signInWithEmailAndPassword,
@@ -20,6 +21,7 @@ import {
   setDoc,
 } from 'firebase/firestore';
 import * as SecureStore from 'expo-secure-store';
+import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import { getAllRecords, saveSyncedRecord } from '../data/database';
 import type { WalletRecord } from '../data/types';
@@ -34,31 +36,46 @@ const config = {
 export const firebaseReady = Object.values(config).every(Boolean);
 const existingFirebaseApp = getApps().length > 0;
 const app = firebaseReady ? (existingFirebaseApp ? getApp() : initializeApp(config)) : undefined;
-const securePersistence: Persistence & {
-  _isAvailable: () => Promise<boolean>;
-  _set: (key: string, value: unknown) => Promise<void>;
-  _get: <T>(key: string) => Promise<T | null>;
-  _remove: (key: string) => Promise<void>;
-  _addListener: (key: string, listener: (value: unknown) => void) => void;
-  _removeListener: (key: string, listener: (value: unknown) => void) => void;
-} = {
-  type: 'LOCAL',
-  _isAvailable: () => SecureStore.isAvailableAsync(),
-  _set: async (key, value) => SecureStore.setItemAsync(key, JSON.stringify(value)),
-  _get: async <T,>(key: string) => {
-    const value = await SecureStore.getItemAsync(key);
+// O Firebase Auth instancia a persistência com `new`, então ela precisa ser uma classe.
+class SecureStorePersistence {
+  static type = 'LOCAL' as const;
+  readonly type = 'LOCAL' as const;
+  _isAvailable = () => SecureStore.isAvailableAsync();
+  // O SecureStore só aceita letras, números, ".", "-" e "_"; o Firebase usa chaves com ":" e "[]".
+  private storeKey = (key: string) => key.replace(/[^A-Za-z0-9._-]/g, '_');
+  _set = async (key: string, value: unknown) => SecureStore.setItemAsync(this.storeKey(key), JSON.stringify(value));
+  _get = async <T,>(key: string) => {
+    const value = await SecureStore.getItemAsync(this.storeKey(key));
     return value === null ? null : JSON.parse(value) as T;
-  },
-  _remove: (key) => SecureStore.deleteItemAsync(key),
-  _addListener: () => undefined,
-  _removeListener: () => undefined,
-};
+  };
+  _remove = (key: string) => SecureStore.deleteItemAsync(this.storeKey(key));
+  _addListener = (_key: string, _listener: (value: unknown) => void) => undefined;
+  _removeListener = (_key: string, _listener: (value: unknown) => void) => undefined;
+}
+const securePersistence = SecureStorePersistence as unknown as Persistence;
 export const auth = app
   ? existingFirebaseApp || Platform.OS === 'web'
     ? getAuth(app)
     : initializeAuth(app, { persistence: securePersistence })
   : undefined;
 export const firestore = app ? getFirestore(app) : undefined;
+
+export function useDisplayName(): string | undefined {
+  const [name, setName] = useState<string | undefined>(auth?.currentUser?.displayName ?? undefined);
+  useEffect(() => {
+    if (!auth) return;
+    setName(auth.currentUser?.displayName ?? undefined);
+    return onIdTokenChanged(auth, (user) => setName(user?.displayName ?? undefined));
+  }, []);
+  return name;
+}
+
+export async function updateAccountName(name: string): Promise<void> {
+  const user = auth?.currentUser;
+  if (!user) return; // modo demonstração: não há conta para atualizar
+  await updateProfile(user, { displayName: name.trim() });
+  await user.getIdToken(true); // avisa quem observa o nome (useDisplayName)
+}
 
 export async function signIn(email: string, password: string): Promise<User> {
   if (!auth) throw new Error('Firebase não configurado. Preencha as variáveis EXPO_PUBLIC_FIREBASE_* no arquivo .env.');
@@ -71,6 +88,7 @@ export async function register(name: string, email: string, password: string): P
   if (!auth) throw new Error('Firebase não configurado. Preencha as variáveis EXPO_PUBLIC_FIREBASE_* no arquivo .env.');
   const result = await createUserWithEmailAndPassword(auth, email.trim(), password);
   await updateProfile(result.user, { displayName: name.trim() });
+  await result.user.getIdToken(true); // renova o token para avisar quem observa o nome
   await persistIdToken(result.user);
   return result.user;
 }

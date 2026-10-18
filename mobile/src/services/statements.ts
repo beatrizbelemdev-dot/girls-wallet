@@ -35,8 +35,8 @@ export async function analyzeInvoice(
   categories: Category[],
 ): Promise<ParsedStatement> {
   if (!apiUrl) throw new Error('O serviço de leitura de faturas não está configurado. Defina EXPO_PUBLIC_API_URL e inicie a API Node.');
+  // Sem conta (modo demonstração) a requisição segue sem token; a API só a aceita em modo de desenvolvimento.
   const currentUser = auth?.currentUser;
-  if (!currentUser) throw new Error('Entre com sua conta Firebase para analisar faturas com segurança.');
   const form = new FormData();
   const file = new File(asset.uri);
   form.append('file', file, asset.name);
@@ -48,7 +48,7 @@ export async function analyzeInvoice(
   try {
     response = await fetch(`${apiUrl}/api/statements/analyze`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${await currentUser.getIdToken()}` },
+      headers: currentUser ? { Authorization: `Bearer ${await currentUser.getIdToken()}` } : {},
       body: form,
     });
   } catch {

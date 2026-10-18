@@ -4,6 +4,45 @@ Aplicativo mobile para organização financeira pessoal, com registro de despesa
 
 > **Importante:** o app não acessa nem importa e-mails. A importação começa quando a pessoa seleciona uma fatura PDF no próprio dispositivo. PDF digitalizado, protegido por senha ou com estrutura ainda não reconhecida é recusado com uma mensagem; OCR não faz parte desta versão.
 
+## Início rápido (sem configurar Firebase)
+
+Para ver o app funcionando basta Node.js 20 ou superior, o aplicativo **Expo Go** no celular (ou um emulador) e dois terminais. Nenhuma conta ou credencial é necessária.
+
+**1. App** (PowerShell, na raiz do repositório):
+
+```powershell
+Set-Location mobile
+npm install
+npx expo start
+```
+
+Leia o QR code com o Expo Go (celular e computador na mesma rede Wi-Fi; se a conexão falhar, use `npx expo start --tunnel`). Na tela de login, escolha **"Explorar com dados de demonstração"**: o app abre com dados de exemplo, que ficam só no aparelho.
+
+> Se o Expo Go avisar que você está logado nele, mas não no Expo CLI, rode `npx expo login` no computador com a mesma conta ou saia da conta no Expo Go.
+
+**2. Importação de fatura em PDF** (opcional, no modo demonstração):
+
+```powershell
+Set-Location server
+Copy-Item .env.example .env
+npm install
+npm run dev
+```
+
+O `.env.example` já liga `ALLOW_ANONYMOUS_ANALYZE=true`, modo de desenvolvimento em que a API analisa o PDF sem login do Firebase. Depois informe ao app onde a API está:
+
+```powershell
+Copy-Item mobile\.env.example mobile\.env
+```
+
+e, em `mobile/.env`, defina `EXPO_PUBLIC_API_URL`: `http://10.0.2.2:4000` no emulador Android, ou `http://<IP-do-computador>:4000` no celular físico (descubra o IP com `ipconfig`; o firewall do Windows pode pedir permissão para a porta 4000). Deixe as variáveis do Firebase vazias e reinicie o app com `npx expo start -c`.
+
+Há uma fatura fictícia pronta em [`samples/fatura-exemplo.pdf`](./samples/fatura-exemplo.pdf). Copie o arquivo para o aparelho (AirDrop, e-mail, Drive ou arrastando para o emulador) e, no app, toque em **Importar fatura** na tela Início (ou em *Perfil → Cartões e faturas*), escolha o cartão, o período 2026-10 e o PDF. A análise deve reconhecer 10 compras, num total de R$ 1.019,54, para você revisar antes de confirmar.
+
+> `ALLOW_ANONYMOUS_ANALYZE` é só para desenvolvimento e demonstração. Em uso real, deixe-o desligado: a API passa a exigir o token do Firebase.
+
+Login real, sincronização com o Firestore e push exigem um projeto Firebase próprio; veja "Instalação e execução" abaixo.
+
 ## Telas e fluxos
 
 As telas seguem a referência [Girls Wallet no Figma](https://www.figma.com/design/MBJlnSJrTKJS8mkGFBhb9Y/Girls-Wallet?node-id=0-1&p=f&t=rFIZCC0Dp1scJ7gx-0): interface em português, valores em reais, fundo claro, tons de rosa/malva, cartões arredondados e navegação inferior por cinco áreas.

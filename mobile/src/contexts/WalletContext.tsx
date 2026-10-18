@@ -1,9 +1,12 @@
 import * as Network from 'expo-network';
 import * as Notifications from 'expo-notifications';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { Alert } from 'react-native';
+import { currentMonth, isOverLimit, spentByCategory } from '../data/budget';
 import {
   allRecordsPage,
   deleteRecord,
+  listAllExpenses,
   listRecords,
   saveRecords,
 } from '../data/database';
@@ -13,6 +16,8 @@ import { sendBudgetAlert, syncRecords } from '../services/firebase';
 interface WalletContextValue {
   expenses: Expense[];
   categories: Category[];
+  /** Gasto do mês atual por nome de categoria, somando todas as despesas (não só a página carregada). */
+  monthlySpent: Record<string, number>;
   goals: Goal[];
   cards: Card[];
   statements: Statement[];
@@ -36,6 +41,7 @@ const PAGE_SIZE = 20;
 
 export function WalletProvider({ children, scope = 'demo' }: React.PropsWithChildren<{ scope?: string }>) {
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [monthlySpent, setMonthlySpent] = useState<Record<string, number>>({});
   const [categories, setCategories] = useState<Category[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
@@ -48,8 +54,9 @@ export function WalletProvider({ children, scope = 'demo' }: React.PropsWithChil
   const [syncUid, setSyncUid] = useState<string>();
 
   const refresh = useCallback(async () => {
-    const [nextExpenses, nextCategories, nextGoals, nextCards, nextStatements, nextSettings] = await Promise.all([
+    const [nextExpenses, allExpenses, nextCategories, nextGoals, nextCards, nextStatements, nextSettings] = await Promise.all([
       listRecords<Expense>('expense', 0, PAGE_SIZE, scope),
+      listAllExpenses(scope),
       listRecords<Category>('category', 0, 100, scope),
       listRecords<Goal>('goal', 0, 100, scope),
       listRecords<Card>('card', 0, 100, scope),
@@ -57,6 +64,7 @@ export function WalletProvider({ children, scope = 'demo' }: React.PropsWithChil
       listRecords<Settings>('settings', 0, 1, scope),
     ]);
     setExpenses(nextExpenses);
+    setMonthlySpent(spentByCategory(allExpenses));
     setCategories(nextCategories);
     setGoals(nextGoals);
     setCards(nextCards);
@@ -117,21 +125,33 @@ export function WalletProvider({ children, scope = 'demo' }: React.PropsWithChil
   }, [expenses.length, hasMoreExpenses, scope]);
 
   const notifyBudgetChanges = useCallback(async (records: WalletRecord[]) => {
-    if (!settings?.pushEnabled) return;
-    const changedExpenses = records.filter((record): record is Expense => record.kind === 'expense');
-    const additions = new Map<string, number>();
-    const replacedAmounts = new Map<string, number>();
-    for (const expense of changedExpenses) {
-      additions.set(expense.category, (additions.get(expense.category) ?? 0) + expense.amount);
-      const prior = expenses.find((item) => item.id === expense.id);
-      if (prior) replacedAmounts.set(expense.category, (replacedAmounts.get(expense.category) ?? 0) + prior.amount);
+    // Categorias tocadas por esta gravação: despesas do mês atual e categorias criadas ou editadas
+    // (assim, definir ou baixar um limite que já foi ultrapassado também avisa).
+    const month = currentMonth();
+    const touched = new Set<string>();
+    for (const record of records) {
+      if (record.kind === 'expense' && record.date.startsWith(month)) touched.add(record.category);
+      if (record.kind === 'category') touched.add(record.name);
     }
-    for (const [categoryName, amount] of additions) {
-      const category = categories.find((item) => item.name === categoryName);
-      if (!category || category.limit <= 0) continue;
-      const previous = expenses.filter((item) => item.category === categoryName).reduce((sum, item) => sum + item.amount, 0);
-      const projected = previous - (replacedAmounts.get(categoryName) ?? 0) + amount;
-      if (previous > category.limit || projected <= category.limit) continue;
+    if (!touched.size) return;
+
+    // Lê o estado já gravado, sem depender da página de despesas carregada na tela.
+    const [allExpenses, savedCategories] = await Promise.all([
+      listAllExpenses(scope),
+      listRecords<Category>('category', 0, 100, scope),
+    ]);
+    const spent = spentByCategory(allExpenses, month);
+    const exceeded = savedCategories.filter((category) => touched.has(category.name) && isOverLimit(category, spent[category.name] ?? 0));
+    if (!exceeded.length) return;
+
+    const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+    const lines = exceeded.map((category) => `${category.name}: ${money.format(spent[category.name] ?? 0)} de ${money.format(category.limit)}`);
+    // Aviso dentro do app: aparece sempre, sem depender de permissão de notificação.
+    Alert.alert(exceeded.length > 1 ? 'Limites ultrapassados' : `Limite de ${exceeded[0].name} ultrapassado`, lines.join('\n'));
+
+    if (!settings?.pushEnabled) return; // notificações do sistema e push seguem a preferência da pessoa
+    for (const category of exceeded) {
+      const total = spent[category.name] ?? 0;
       const failures: string[] = [];
       try {
         const permission = await Notifications.getPermissionsAsync();
@@ -139,7 +159,7 @@ export function WalletProvider({ children, scope = 'demo' }: React.PropsWithChil
           await Notifications.scheduleNotificationAsync({
             content: {
               title: `Limite de ${category.name} ultrapassado`,
-              body: `Você atingiu ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(projected)} de ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(category.limit)}.`,
+              body: `Você atingiu ${money.format(total)} de ${money.format(category.limit)} neste mês.`,
             },
             trigger: null,
           });
@@ -149,14 +169,14 @@ export function WalletProvider({ children, scope = 'demo' }: React.PropsWithChil
       }
       if (syncUid && !offline) {
         try {
-          await sendBudgetAlert(category.name, projected, category.limit);
+          await sendBudgetAlert(category.name, total, category.limit);
         } catch (error) {
           failures.push(error instanceof Error ? error.message : 'O alerta push falhou.');
         }
       }
       if (failures.length) setSyncError(`Gasto salvo; falha ao avisar sobre ${category.name}: ${failures.join(' ')}`);
     }
-  }, [categories, expenses, offline, settings?.pushEnabled, syncUid]);
+  }, [offline, scope, settings?.pushEnabled, syncUid]);
 
   const saveMany = useCallback(async (records: WalletRecord[]) => {
     await saveRecords(records, scope);
@@ -176,6 +196,7 @@ export function WalletProvider({ children, scope = 'demo' }: React.PropsWithChil
   const value = useMemo<WalletContextValue>(() => ({
     expenses,
     categories,
+    monthlySpent,
     goals,
     cards,
     statements,
@@ -192,7 +213,7 @@ export function WalletProvider({ children, scope = 'demo' }: React.PropsWithChil
     setSyncIdentity: setSyncUid,
     clearSyncError: () => setSyncError(''),
     demoMode: scope === 'demo',
-  }), [cards, categories, expenses, goals, hasMoreExpenses, loadMoreExpenses, loading, offline, refresh, remove, save, saveMany, scope, settings, statements, syncError]);
+  }), [cards, categories, expenses, monthlySpent, goals, hasMoreExpenses, loadMoreExpenses, loading, offline, refresh, remove, save, saveMany, scope, settings, statements, syncError]);
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
 }

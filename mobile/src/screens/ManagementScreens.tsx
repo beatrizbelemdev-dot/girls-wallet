@@ -5,7 +5,7 @@ import { CreditCard, FileText, Pencil, Plane, Plus, Trash2 } from 'lucide-react-
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
-import { Button, CardBox, Field, Header, Notice, PageTitle, Screen, SectionTitle } from '../components/ui';
+import { Button, CardBox, DateField, Field, Header, Notice, PageTitle, Screen, SectionTitle } from '../components/ui';
 import { useWallet } from '../contexts/WalletContext';
 import type { Card, Goal } from '../data/types';
 import type { RootStackParamList } from '../navigation';
@@ -157,7 +157,7 @@ export function GoalFormScreen() {
   const [target, setTarget] = useState(String(original?.target ?? ''));
   const [saved, setSaved] = useState(String(original?.saved ?? '0'));
   const [monthly, setMonthly] = useState(String(original?.monthlyContribution ?? ''));
-  const [dueDate, setDueDate] = useState(original?.dueDate ?? '');
+  const [dueDate, setDueDate] = useState(original?.dueDate ?? new Date(Date.now() + 180 * 86_400_000).toISOString().slice(0, 10));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   async function submit() {
@@ -199,7 +199,7 @@ export function GoalFormScreen() {
       <Field label="Valor desejado" value={target} onChangeText={setTarget} keyboardType="decimal-pad" />
       <Field label="Já guardado" value={saved} onChangeText={setSaved} keyboardType="decimal-pad" />
       <Field label="Aporte mensal" value={monthly} onChangeText={setMonthly} keyboardType="decimal-pad" />
-      <Field label="Data desejada (AAAA-MM-DD)" value={dueDate} onChangeText={setDueDate} placeholder="2027-04-01" />
+      <DateField label="Data desejada" value={dueDate} onChange={setDueDate} />
       {error ? <Notice tone="amber">{error}</Notice> : null}
       <Button title="Salvar meta" onPress={() => void submit()} loading={busy} />
       {original ? <Button title="Excluir meta" variant="secondary" icon={<Trash2 size={17} color={colors.red} />} onPress={confirmDelete} /> : null}

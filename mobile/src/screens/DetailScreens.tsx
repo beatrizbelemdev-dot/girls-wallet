@@ -15,11 +15,13 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
-import { Button, CardBox, ChoiceRow, Field, Header, Notice, PageTitle, ProgressBar, Screen, SectionTitle } from '../components/ui';
+import { Button, CardBox, ChoiceRow, DateField, Field, Header, Notice, PageTitle, ProgressBar, Screen, SectionTitle } from '../components/ui';
 import { useWallet } from '../contexts/WalletContext';
+import { isOverLimit } from '../data/budget';
 import type { Category, Expense, Statement } from '../data/types';
 import type { RootStackParamList } from '../navigation';
 import { colors, formatCurrency, formatDate, parseCurrencyInput } from '../theme';
+import { updateAccountName, useDisplayName } from '../services/firebase';
 import { analyzeInvoice, chooseInvoicePdf, type InvoiceTransaction } from '../services/statements';
 
 type Navigation = NativeStackNavigationProp<RootStackParamList>;
@@ -30,7 +32,7 @@ function makeId(prefix: string): string {
 
 export function BudgetScreen() {
   const navigation = useNavigation<Navigation>();
-  const { settings, expenses, goals, categories } = useWallet();
+  const { settings, expenses, goals, categories, monthlySpent } = useWallet();
   const income = settings?.monthlyIncome ?? 0;
   const fixed = settings?.fixedExpenses ?? 0;
   const credit = expenses.filter((item) => item.payment === 'Crédito').reduce((sum, item) => sum + item.amount, 0);
@@ -62,7 +64,7 @@ export function BudgetScreen() {
       <CardBox>
         <SectionTitle>Limites por categoria</SectionTitle>
         {categories.slice(0, 3).map((category) => {
-          const spent = expenses.filter((item) => item.category === category.name).reduce((sum, item) => sum + item.amount, 0);
+          const spent = monthlySpent[category.name] ?? 0;
           return <MoneyRow key={category.id} label={category.name} amount={spent} suffix={`de ${formatCurrency(category.limit)}`} />;
         })}
       </CardBox>
@@ -77,12 +79,9 @@ function MoneyRow({ label, amount, sign, suffix }: { label: string; amount: numb
 
 export function NotificationsScreen() {
   const navigation = useNavigation<Navigation>();
-  const { categories, expenses, statements } = useWallet();
+  const { categories, monthlySpent, statements } = useWallet();
   const [filter, setFilter] = useState('Todas');
-  const overLimit = categories.filter((category) => {
-    const spent = expenses.filter((expense) => expense.category === category.name).reduce((sum, item) => sum + item.amount, 0);
-    return spent > category.limit;
-  });
+  const overLimit = categories.filter((category) => isOverLimit(category, monthlySpent[category.name] ?? 0));
   const notifications = [
     ...overLimit.map((category) => ({
       id: category.id,
@@ -141,6 +140,10 @@ export function ExpenseFormScreen() {
   const [busy, setBusy] = useState(false);
 
   async function submit() {
+    if (original?.statementId) {
+      setError('Compras importadas de fatura PDF não podem ser editadas.');
+      return;
+    }
     const value = parseCurrencyInput(amount);
     const parsedDate = new Date(`${date}T12:00:00`);
     if (!description.trim() || !Number.isFinite(value) || value <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) {
@@ -180,7 +183,7 @@ export function ExpenseFormScreen() {
         <ChoiceRow choices={categories.map((item) => item.name)} value={category} onChange={setCategory} />
         <Pressable onPress={() => navigation.navigate('Categories')}><Text style={{ color: colors.primary, fontWeight: '600', fontSize: 12 }}>+ Criar ou editar categoria</Text></Pressable>
       </View>
-      <Field label="Data da despesa (AAAA-MM-DD)" value={date} onChangeText={setDate} placeholder="2026-10-15" />
+      <DateField label="Data da despesa" value={date} onChange={setDate} />
       <View style={{ gap: 8 }}><Text style={{ color: colors.ink, fontWeight: '600', fontSize: 12 }}>Meio de pagamento</Text><ChoiceRow choices={['PIX', 'Débito', 'Dinheiro', 'Transferência', 'Crédito']} value={payment} onChange={(value) => setPayment(value as Expense['payment'])} /></View>
       <Pressable onPress={() => setRecurring((current) => !current)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 18 }}>
         <View style={{ flex: 1, gap: 4 }}><Text style={{ color: colors.ink, fontWeight: '700' }}>Repetir todo mês</Text><Text style={{ color: colors.muted, fontSize: 12 }}>{recurring ? 'Ativado · despesa fixa' : 'Desativado · despesa variável'}</Text></View>
@@ -214,7 +217,7 @@ export function FixedExpensesScreen() {
 }
 
 export function CategoriesScreen() {
-  const { categories, expenses, save } = useWallet();
+  const { categories, monthlySpent, save } = useWallet();
   const [editing, setEditing] = useState('');
   const [name, setName] = useState('');
   const [limit, setLimit] = useState('');
@@ -268,8 +271,8 @@ export function CategoriesScreen() {
       <Notice>Os limites ajudam a distribuir seu orçamento. Ultrapassar uma categoria não significa ficar sem saldo no mês.</Notice>
       <CardBox>
         {categories.map((category) => {
-          const spent = expenses.filter((expense) => expense.category === category.name).reduce((sum, item) => sum + item.amount, 0);
-          const danger = spent > category.limit;
+          const spent = monthlySpent[category.name] ?? 0;
+          const danger = isOverLimit(category, spent);
           return (
             <View key={category.id} style={{ gap: 8, paddingVertical: 6 }}>
               {editing === category.id ? (
@@ -285,7 +288,7 @@ export function CategoriesScreen() {
                     <Pressable accessibilityLabel={`Editar ${category.name}`} onPress={() => beginEdit(category)}><Pencil size={18} color={colors.primary} /></Pressable>
                   </View>
                   <Text style={{ color: colors.muted, fontSize: 12 }}>{formatCurrency(spent)} de {formatCurrency(category.limit)}</Text>
-                  <ProgressBar value={spent / category.limit} danger={danger} />
+                  <ProgressBar value={category.limit > 0 ? spent / category.limit : 0} danger={danger} />
                   {danger ? <Text style={{ color: colors.red, fontSize: 11 }}>{formatCurrency(spent - category.limit)} acima do limite</Text> : null}
                 </>
               )}
@@ -393,6 +396,10 @@ export function ImportReviewScreen() {
       setError('Revise os lançamentos: a lista não pode ficar vazia e cada compra precisa de descrição e valor positivo.');
       return;
     }
+    if (duplicates.length === transactions.length) {
+      setError('Nenhuma compra nova: todas já estão salvas, então esta fatura já foi importada. Remova ou edite lançamentos, ou escolha outro arquivo.');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -427,7 +434,9 @@ export function ImportReviewScreen() {
         records.push(expense);
       }
       await saveMany(records);
-      Alert.alert('Fatura salva', `${transactions.length - duplicates.length} compras adicionadas.`, [{ text: 'Concluído', onPress: () => navigation.popToTop() }]);
+      const added = transactions.length - duplicates.length;
+      const skipped = duplicates.length ? ` ${duplicates.length} já existia${duplicates.length > 1 ? 'm' : ''} e não ${duplicates.length > 1 ? 'foram' : 'foi'} repetida${duplicates.length > 1 ? 's' : ''}.` : '';
+      Alert.alert('Fatura salva', `${added} compra${added > 1 ? 's' : ''} adicionada${added > 1 ? 's' : ''}.${skipped}`, [{ text: 'Concluído', onPress: () => navigation.popToTop() }]);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível salvar a fatura.');
     } finally {
@@ -471,6 +480,55 @@ export function ImportReviewScreen() {
   );
 }
 
+export function ProfileEditScreen() {
+  const { settings, save } = useWallet();
+  const navigation = useNavigation<Navigation>();
+  const accountName = useDisplayName();
+  const [name, setName] = useState(settings?.name || accountName || '');
+  const [nickname, setNickname] = useState(settings?.nickname ?? '');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!name.trim()) {
+      setError('Informe seu nome.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await save({
+        monthlyIncome: 0,
+        fixedExpenses: 0,
+        monthlySavings: 0,
+        ...settings,
+        id: settings?.id ?? 'settings',
+        kind: 'settings',
+        name: name.trim(),
+        nickname: nickname.trim(),
+        updatedAt: Date.now(),
+      });
+      await updateAccountName(name).catch(() => undefined); // o nome local já foi salvo; a conta é atualizada quando possível
+      navigation.goBack();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o perfil.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Screen>
+      <Header back />
+      <PageTitle title="Editar perfil" subtitle="Do jeito que você gosta de ser chamada." />
+      <Field label="Nome completo" value={name} onChangeText={setName} autoCapitalize="words" />
+      <Field label="Como prefere ser chamada? (opcional)" value={nickname} onChangeText={setNickname} placeholder="Apelido" autoCapitalize="words" />
+      {error ? <Notice tone="amber">{error}</Notice> : null}
+      <Button title="Salvar perfil" onPress={() => void submit()} loading={busy} />
+    </Screen>
+  );
+}
+
 export function IncomeScreen() {
   const { settings, save } = useWallet();
   const navigation = useNavigation<Navigation>();
@@ -488,7 +546,7 @@ export function IncomeScreen() {
       return;
     }
     try {
-      await save({ id: settings?.id ?? 'settings', kind: 'settings', name: name.trim(), monthlyIncome, fixedExpenses, monthlySavings, updatedAt: Date.now() });
+      await save({ ...settings, id: settings?.id ?? 'settings', kind: 'settings', name: name.trim(), monthlyIncome, fixedExpenses, monthlySavings, updatedAt: Date.now() });
       navigation.goBack();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível salvar as informações financeiras.');

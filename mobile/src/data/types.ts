@@ -57,6 +57,8 @@ export interface Statement extends BaseRecord {
 export interface Settings extends BaseRecord {
   kind: 'settings';
   name: string;
+  /** Como a pessoa prefere ser chamada. `undefined` = ainda não perguntado; '' = prefere o nome. */
+  nickname?: string;
   monthlyIncome: number;
   fixedExpenses: number;
   monthlySavings: number;

@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,6 +11,7 @@ import {
   type ScrollViewProps,
   type TextInputProps,
 } from 'react-native';
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Wallet } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -21,6 +23,8 @@ export function Screen({ children, scroll = true, contentContainerStyle, ...prop
   const content = scroll ? (
     <ScrollView
       keyboardShouldPersistTaps="handled"
+      keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+      automaticallyAdjustKeyboardInsets
       contentContainerStyle={[styles.screenContent, contentContainerStyle]}
       showsVerticalScrollIndicator={false}
       {...props}
@@ -125,6 +129,50 @@ export function Field({
         {...props}
       />
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
+    </View>
+  );
+}
+
+function isoToDate(value: string): Date {
+  const parsed = new Date(`${value}T12:00:00`);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
+function dateToIso(date: Date): string {
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** Seletor de data nativo; `value` e `onChange` usam o formato AAAA-MM-DD. */
+export function DateField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const date = isoToDate(value);
+  return (
+    <View style={styles.field}>
+      <Text style={styles.label}>{label}</Text>
+      {Platform.OS === 'ios' ? (
+        <View style={{ alignItems: 'flex-start' }}>
+          <DateTimePicker
+            value={date}
+            mode="date"
+            display="compact"
+            locale="pt-BR"
+            accentColor={colors.primary}
+            onValueChange={(_event, selected) => onChange(dateToIso(selected))}
+          />
+        </View>
+      ) : (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => DateTimePickerAndroid.open({
+            value: date,
+            mode: 'date',
+            onValueChange: (_event, selected) => onChange(dateToIso(selected)),
+          })}
+          style={styles.input}
+        >
+          <Text style={{ color: colors.ink }}>{date.toLocaleDateString('pt-BR')}</Text>
+        </Pressable>
+      )}
     </View>
   );
 }

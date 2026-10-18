@@ -44,6 +44,26 @@ async function database(scope = 'demo'): Promise<SQLite.SQLiteDatabase> {
         );
       `);
       const result = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM wallet_records');
+      if (scope !== 'demo') {
+        // Conta real: começa com as categorias padrão, uma única vez (linhas apagadas também contam,
+        // para não recriar o que a pessoa removeu). Os ids fixos evitam duplicar entre aparelhos.
+        const categories = await db.getFirstAsync<{ count: number }>(
+          "SELECT COUNT(*) AS count FROM wallet_records WHERE kind = 'category'",
+        );
+        if (categories?.count === 0) {
+          await db.withTransactionAsync(async () => {
+            for (const record of seedRecords.filter((item) => item.kind === 'category')) {
+              await db.runAsync(
+                'INSERT OR IGNORE INTO wallet_records (id, kind, payload, updated_at) VALUES (?, ?, ?, ?)',
+                record.id,
+                record.kind,
+                JSON.stringify(record),
+                record.updatedAt,
+              );
+            }
+          });
+        }
+      }
       if (scope === 'demo' && result?.count === 0) {
         await db.withTransactionAsync(async () => {
           for (const record of seedRecords) {
@@ -80,6 +100,15 @@ export async function listRecords<T extends WalletRecord>(kind: T['kind'], page 
       if ('date' in first && 'date' in second) return second.date.localeCompare(first.date);
       return second.updatedAt - first.updatedAt;
     });
+}
+
+/** Todas as despesas ativas (sem paginação), para somar limites por categoria. */
+export async function listAllExpenses(scope = 'demo'): Promise<import('./types').Expense[]> {
+  const db = await database(scope);
+  const rows = await db.getAllAsync<{ payload: string }>(
+    "SELECT payload FROM wallet_records WHERE kind = 'expense' AND deleted_at IS NULL",
+  );
+  return rows.map((row) => JSON.parse(row.payload) as import('./types').Expense);
 }
 
 export async function getAllRecords(scope = 'demo'): Promise<Array<{ record: WalletRecord; deletedAt: number | null }>> {
