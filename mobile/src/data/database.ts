@@ -1,3 +1,7 @@
+/**
+ * Repositório SQLite da carteira: cada escopo (conta ou demonstração) usa um arquivo
+ * separado; exclusões são tombstones para que também possam ser propagadas na sincronização.
+ */
 import * as SQLite from 'expo-sqlite';
 import type { WalletRecord } from './types';
 

@@ -1,3 +1,4 @@
+/** Define os fluxos de acesso e as telas autenticadas, com abas principais e rotas de detalhe. */
 import React from 'react';
 import { Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

@@ -1,3 +1,4 @@
+/** Configuração do Firebase, autenticação persistida com SecureStore e sincronização da carteira. */
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import {
   createUserWithEmailAndPassword,
@@ -138,6 +139,7 @@ export async function sendBudgetAlert(category: string, spent: number, limit: nu
 }
 
 export async function syncRecords(uid: string): Promise<void> {
+  // Reconcilia por updatedAt; deletedAt é mantido como tombstone para propagar exclusões.
   if (!firestore) throw new Error('Firestore não configurado.');
   const local = await getAllRecords(uid);
   const remoteRef = collection(firestore, 'users', uid, 'records');
