@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Alert, Platform, Pressable, Text, View } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { CreditCard, FileText, Pencil, Plane, Plus, Trash2 } from 'lucide-react-native';
@@ -11,6 +11,10 @@ import type { Card, Goal } from '../data/types';
 import type { RootStackParamList } from '../navigation';
 import { colors, formatCurrency, formatDate, parseCurrencyInput } from '../theme';
 import { auth, signOutUser } from '../services/firebase';
+import { projectGoal, monthsUntil } from '../data/projection';
+import { fetchRates, type Rates } from '../services/rates';
+import { fetchBanks, searchBanks, type Bank } from '../services/banks';
+import { BankLogo } from '../components/BankLogo';
 
 type Navigation = NativeStackNavigationProp<RootStackParamList>;
 
@@ -85,8 +89,42 @@ export function AddCardScreen() {
   const [lastFour, setLastFour] = useState(original?.lastFour ?? '');
   const [closingDay, setClosingDay] = useState(String(original?.closingDay ?? ''));
   const [dueDay, setDueDay] = useState(String(original?.dueDay ?? ''));
+  const [logoUrl, setLogoUrl] = useState(original?.logoUrl);
+  // Escolher o banco é um atalho opcional: o nome continua podendo ser digitado, e o cadastro
+  // funciona sem internet. A lista só é consultada quando a pessoa abre o seletor.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [banks, setBanks] = useState<Bank[]>();
+  const [banksLoading, setBanksLoading] = useState(false);
+  const [banksError, setBanksError] = useState('');
+  const [bankQuery, setBankQuery] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+
+  async function togglePicker() {
+    if (pickerOpen) {
+      setPickerOpen(false);
+      return;
+    }
+    setPickerOpen(true);
+    if (banks) return;
+    setBanksLoading(true);
+    setBanksError('');
+    try {
+      setBanks(await fetchBanks());
+    } catch (reason) {
+      setBanksError(reason instanceof Error ? reason.message : 'Não foi possível carregar a lista de bancos.');
+    } finally {
+      setBanksLoading(false);
+    }
+  }
+
+  function chooseBank(bank: Bank) {
+    setName(bank.name);
+    setLogoUrl(bank.logoUrl);
+    setPickerOpen(false);
+    setBankQuery('');
+  }
+
   async function submit() {
     const close = Number(closingDay);
     const due = Number(dueDay);
@@ -94,7 +132,7 @@ export function AddCardScreen() {
       setError('Informe o nome, os 4 últimos dígitos e dias válidos de fechamento e vencimento.');
       return;
     }
-    const card: Card = { id: original?.id ?? makeId('card'), kind: 'card', name: name.trim(), lastFour, closingDay: close, dueDay: due, updatedAt: Date.now() };
+    const card: Card = { id: original?.id ?? makeId('card'), kind: 'card', name: name.trim(), lastFour, closingDay: close, dueDay: due, logoUrl, updatedAt: Date.now() };
     setBusy(true);
     try {
       await save(card);
@@ -108,7 +146,37 @@ export function AddCardScreen() {
   return (
     <Screen>
       <Header back />
-      <PageTitle title={original ? 'Editar cartão' : 'Adicionar cartão'} subtitle="Os dados do cartão ficam apenas neste dispositivo." />
+      <PageTitle title={original ? 'Editar cartão' : 'Adicionar cartão'} subtitle="Guardamos só o nome, os 4 últimos dígitos e as datas da fatura. Com uma conta, eles são sincronizados com a nuvem; no modo demonstração, ficam só neste aparelho." />
+      <View style={{ gap: 8 }}>
+        <Text style={{ color: colors.ink, fontWeight: '600', fontSize: 12 }}>Banco (opcional)</Text>
+        {logoUrl ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <BankLogo uri={logoUrl} />
+            <Text style={{ flex: 1, color: colors.ink, fontWeight: '600' }}>{name}</Text>
+            <Pressable onPress={() => setLogoUrl(undefined)} hitSlop={8}><Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>Remover</Text></Pressable>
+          </View>
+        ) : null}
+        <Button title={pickerOpen ? 'Fechar lista de bancos' : 'Escolher um banco da lista'} variant="secondary" onPress={() => void togglePicker()} />
+        {pickerOpen ? (
+          <CardBox>
+            <Field label="Buscar banco" value={bankQuery} onChangeText={setBankQuery} placeholder="Ex.: Nubank, Itaú, Inter" autoCapitalize="none" />
+            {banksLoading ? <Text style={{ color: colors.muted }}>Carregando bancos...</Text> : null}
+            {banksError ? <Notice tone="amber">{banksError} Você ainda pode digitar o nome do cartão abaixo.</Notice> : null}
+            {banks ? (
+              <>
+                {searchBanks(banks, bankQuery).slice(0, 8).map((bank) => (
+                  <Pressable key={bank.code} onPress={() => chooseBank(bank)} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 }}>
+                    <BankLogo uri={bank.logoUrl} size={32} />
+                    <Text style={{ flex: 1, color: colors.ink }}>{bank.name}</Text>
+                  </Pressable>
+                ))}
+                {!searchBanks(banks, bankQuery).length ? <Text style={{ color: colors.muted }}>Nenhum banco encontrado.</Text> : null}
+                <Text style={{ color: colors.muted, fontSize: 11 }}>Mostrando até 8 resultados. Digite para refinar a busca.</Text>
+              </>
+            ) : null}
+          </CardBox>
+        ) : null}
+      </View>
       <Field label="Nome do cartão" value={name} onChangeText={setName} placeholder="Ex.: Inter" />
       <Field label="Últimos 4 dígitos" value={lastFour} onChangeText={(value) => setLastFour(value.replace(/\D/g, '').slice(0, 4))} keyboardType="number-pad" />
       <Field label="Dia de fechamento da fatura" value={closingDay} onChangeText={setClosingDay} keyboardType="number-pad" />
@@ -126,7 +194,20 @@ export function GoalDetailScreen() {
   const { goals } = useWallet();
   const goal = goals.find((item) => item.id === route.params.id);
   const progress = goal ? Math.min(1, goal.saved / goal.target) : 0;
+
+  const [taxas, setTaxas] = useState<Rates>();
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+  useEffect(() => {
+    fetchRates()
+        .then(setTaxas)
+        .catch((reason: unknown) => setErro(reason instanceof Error ? reason.message : 'Não foi possível consultar a taxa.'))
+        .finally(() => setCarregando(false));
+  }, []);
   if (!goal) return <Screen><Header back /><Notice>Esta meta não foi encontrada. Ela pode ter sido removida.</Notice></Screen>;
+  const meses = monthsUntil(goal.dueDate);
+  const semRendimento = projectGoal(goal.saved, goal.monthlyContribution, 0, meses);
+  const comRendimento = taxas ? projectGoal(goal.saved, goal.monthlyContribution, taxas.cdi, meses) : semRendimento;
   return (
     <Screen>
       <Header back />
@@ -142,6 +223,18 @@ export function GoalDetailScreen() {
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Text style={{ color: colors.muted }}>Aporte mensal</Text><Text style={{ color: colors.ink, fontWeight: '700' }}>{formatCurrency(goal.monthlyContribution)}</Text></View>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Text style={{ color: colors.muted }}>Falta guardar</Text><Text style={{ color: colors.ink, fontWeight: '700' }}>{formatCurrency(Math.max(0, goal.target - goal.saved))}</Text></View>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Text style={{ color: colors.muted }}>Data desejada</Text><Text style={{ color: colors.ink, fontWeight: '700' }}>{formatDate(goal.dueDate)}</Text></View>
+      </CardBox>
+      <CardBox>
+        <SectionTitle>Rendimento projetado</SectionTitle>
+        {carregando ? <Text>Consultando a taxa...</Text> : null}
+        {erro ? <Notice tone="amber">{erro}</Notice> : null}
+        {taxas ? (
+            <>
+              <Text>Taxa CDI: {taxas.cdi}% ao ano (BrasilAPI)</Text>
+              <Text>Sem rendimento: {formatCurrency(semRendimento)}</Text>
+              <Text>Com rendimento: {formatCurrency(comRendimento)}</Text>
+            </>
+        ) : null}
       </CardBox>
       <Button title="Editar meta" icon={<Pencil size={17} color="white" />} onPress={() => navigation.navigate('GoalForm', { id: goal.id })} />
     </Screen>

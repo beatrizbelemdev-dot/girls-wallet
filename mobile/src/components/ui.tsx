@@ -16,7 +16,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Wallet } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { Card } from '../data/types';
 import type { RootStackParamList } from '../navigation';
+import { BankLogo } from './BankLogo';
 import { colors, spacing } from '../theme';
 
 export function Screen({ children, scroll = true, contentContainerStyle, ...props }: ScrollViewProps & { scroll?: boolean }) {
@@ -201,6 +203,36 @@ export function ChoiceRow({ choices, value, onChange }: { choices: string[]; val
           <Text style={[styles.choiceText, value === choice ? styles.choiceSelectedText : null]}>{choice}</Text>
         </Pressable>
       ))}
+    </View>
+  );
+}
+
+/**
+ * Escolha de cartão em forma de "chips" com a logo do banco (quando o cartão tem uma).
+ * Seleciona por `id`, e não pelo nome, então dois cartões com o mesmo nome não se confundem.
+ *
+ * @param cards Cartões cadastrados.
+ * @param value `id` do cartão selecionado.
+ * @param onChange Recebe o `id` do cartão tocado.
+ */
+export function CardChoiceRow({ cards, value, onChange }: { cards: Card[]; value: string; onChange: (id: string) => void }) {
+  return (
+    <View style={styles.choiceRow}>
+      {cards.map((card) => {
+        const selected = card.id === value;
+        return (
+          <Pressable
+            key={card.id}
+            accessibilityRole="button"
+            accessibilityState={{ selected }}
+            onPress={() => onChange(card.id)}
+            style={[styles.choice, selected ? styles.choiceSelected : null, { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, paddingLeft: 8 }]}
+          >
+            <BankLogo uri={card.logoUrl} size={26} />
+            <Text style={[styles.choiceText, selected ? styles.choiceSelectedText : null]}>{card.name}</Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
