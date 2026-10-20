@@ -39,7 +39,7 @@ export interface Goal extends BaseRecord {
 export interface Card extends BaseRecord {
   kind: 'card';
   name: string;
-  lastFour: string;
+  lastFour?: string;
   closingDay: number;
   dueDay: number;
 }

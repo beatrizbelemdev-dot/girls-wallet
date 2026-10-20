@@ -48,7 +48,7 @@ export function CardsScreen() {
           <CardBox style={{ borderColor: selectedCard?.id === card.id ? colors.primary : colors.border, backgroundColor: selectedCard?.id === card.id ? colors.roseLight : colors.surface }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <CreditCard size={20} color={colors.primary} />
-              <View style={{ flex: 1 }}><Text style={{ color: colors.ink, fontWeight: '700' }}>{card.name}</Text><Text style={{ color: colors.muted, fontSize: 11 }}>•••• {card.lastFour} · fecha dia {card.closingDay} · vence dia {card.dueDay}</Text></View>
+              <View style={{ flex: 1 }}><Text style={{ color: colors.ink, fontWeight: '700' }}>{card.name}</Text><Text style={{ color: colors.muted, fontSize: 11 }}>{card.lastFour ? `•••• ${card.lastFour} · ` : ''}fecha dia {card.closingDay} · vence dia {card.dueDay}</Text></View>
               <Pressable onPress={() => navigation.navigate('AddCard', { id: card.id })}><Pencil size={17} color={colors.primary} /></Pressable>
               <Pressable onPress={() => deleteCard(card)}><Trash2 size={17} color={colors.muted} /></Pressable>
             </View>
@@ -82,7 +82,6 @@ export function AddCardScreen() {
   const { cards, save } = useWallet();
   const original = cards.find((card) => card.id === route.params?.id);
   const [name, setName] = useState(original?.name ?? '');
-  const [lastFour, setLastFour] = useState(original?.lastFour ?? '');
   const [closingDay, setClosingDay] = useState(String(original?.closingDay ?? ''));
   const [dueDay, setDueDay] = useState(String(original?.dueDay ?? ''));
   const [error, setError] = useState('');
@@ -90,11 +89,11 @@ export function AddCardScreen() {
   async function submit() {
     const close = Number(closingDay);
     const due = Number(dueDay);
-    if (!name.trim() || !/^\d{4}$/.test(lastFour) || !Number.isInteger(close) || close < 1 || close > 31 || !Number.isInteger(due) || due < 1 || due > 31) {
-      setError('Informe o nome, os 4 últimos dígitos e dias válidos de fechamento e vencimento.');
+    if (!name.trim() || !Number.isInteger(close) || close < 1 || close > 31 || !Number.isInteger(due) || due < 1 || due > 31) {
+      setError('Informe o nome e dias válidos de fechamento e vencimento.');
       return;
     }
-    const card: Card = { id: original?.id ?? makeId('card'), kind: 'card', name: name.trim(), lastFour, closingDay: close, dueDay: due, updatedAt: Date.now() };
+    const card: Card = { id: original?.id ?? makeId('card'), kind: 'card', name: name.trim(), ...(original?.lastFour ? { lastFour: original.lastFour } : {}), closingDay: close, dueDay: due, updatedAt: Date.now() };
     setBusy(true);
     try {
       await save(card);
@@ -110,10 +109,8 @@ export function AddCardScreen() {
       <Header back />
       <PageTitle title={original ? 'Editar cartão' : 'Adicionar cartão'} subtitle="Os dados do cartão ficam apenas neste dispositivo." />
       <Field label="Nome do cartão" value={name} onChangeText={setName} placeholder="Ex.: Inter" />
-      <Field label="Últimos 4 dígitos" value={lastFour} onChangeText={(value) => setLastFour(value.replace(/\D/g, '').slice(0, 4))} keyboardType="number-pad" />
       <Field label="Dia de fechamento da fatura" value={closingDay} onChangeText={setClosingDay} keyboardType="number-pad" />
       <Field label="Dia de vencimento" value={dueDay} onChangeText={setDueDay} keyboardType="number-pad" />
-      <Notice>Não informe número completo do cartão, CVV ou senha. O Girls Wallet precisa apenas de um nome e dos últimos quatro dígitos.</Notice>
       {error ? <Notice tone="amber">{error}</Notice> : null}
       <Button title={original ? 'Salvar cartão' : 'Adicionar cartão'} onPress={() => void submit()} loading={busy} />
     </Screen>
