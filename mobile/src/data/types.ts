@@ -42,6 +42,8 @@ export interface Card extends BaseRecord {
   lastFour?: string;
   closingDay: number;
   dueDay: number;
+  /** Logo do banco (SVG), vinda da BrasilAPI ao escolher o banco; ausente em cartões antigos. */
+  logoUrl?: string;
 }
 
 export interface Statement extends BaseRecord {

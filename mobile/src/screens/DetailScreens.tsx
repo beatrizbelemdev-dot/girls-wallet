@@ -15,7 +15,7 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
-import { Button, CardBox, ChoiceRow, DateField, Field, Header, Notice, PageTitle, ProgressBar, Screen, SectionTitle } from '../components/ui';
+import { Button, CardBox, CardChoiceRow, ChoiceRow, DateField, Field, Header, Notice, PageTitle, ProgressBar, Screen, SectionTitle } from '../components/ui';
 import { useWallet } from '../contexts/WalletContext';
 import { isOverLimit } from '../data/budget';
 import type { Category, Expense, Statement } from '../data/types';
@@ -353,7 +353,7 @@ export function ImportStatementScreen() {
       <PageTitle title="Menos digitação. Mais tempo." subtitle="Importe faturas PDF e revise as compras antes de salvar." />
       <ChoiceRow choices={['Fatura PDF']} value="Fatura PDF" onChange={() => undefined} />
       <SectionTitle>Cartões cadastrados</SectionTitle>
-      {cards.length ? <ChoiceRow choices={cards.map((card) => card.name)} value={cards.find((card) => card.id === cardId)?.name ?? ''} onChange={(selected) => setCardId(cards.find((card) => card.name === selected)?.id ?? '')} /> : <Notice>Cadastre um cartão antes de importar a fatura.</Notice>}
+      {cards.length ? <CardChoiceRow cards={cards} value={cardId} onChange={setCardId} /> : <Notice>Cadastre um cartão antes de importar a fatura.</Notice>}
       <Button title="Adicionar cartão" variant="secondary" onPress={() => navigation.navigate('AddCard')} />
       <Field label="Período da fatura (AAAA-MM)" value={period} onChangeText={setPeriod} placeholder="2026-10" />
       <CardBox style={{ backgroundColor: colors.roseLight, borderStyle: 'dashed', borderColor: colors.primary }}>
