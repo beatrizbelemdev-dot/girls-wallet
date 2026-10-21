@@ -1,4 +1,21 @@
-import type { Category, Expense } from './types';
+import type { Category, Expense, Goal } from './types';
+
+/** Uma meta está concluída quando o valor guardado já alcançou o valor desejado. */
+export function isGoalComplete(goal: Goal): boolean {
+  return goal.target > 0 && goal.saved >= goal.target;
+}
+
+/**
+ * Reserva mensal para as metas: a soma do aporte mensal das metas ainda em andamento.
+ * Metas concluídas deixam de reservar dinheiro. Enquanto não houver nenhuma meta cadastrada,
+ * usa `fallback` (o valor digitado em "Salário e renda").
+ */
+export function monthlyGoalReserve(goals: Goal[], fallback = 0): number {
+  if (!goals.length) return fallback;
+  return goals
+    .filter((goal) => !isGoalComplete(goal))
+    .reduce((sum, goal) => sum + (Number.isFinite(goal.monthlyContribution) ? goal.monthlyContribution : 0), 0);
+}
 
 /** Mês atual no formato AAAA-MM, no fuso do aparelho. */
 export function currentMonth(now = new Date()): string {

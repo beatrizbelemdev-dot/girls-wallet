@@ -17,7 +17,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import { Button, CardBox, CardChoiceRow, ChoiceRow, DateField, Field, Header, MonthField, Notice, PageTitle, ProgressBar, Screen, SectionTitle } from '../components/ui';
 import { useWallet } from '../contexts/WalletContext';
-import { currentMonth, isOverLimit } from '../data/budget';
+import { currentMonth, isOverLimit, monthlyGoalReserve } from '../data/budget';
 import type { Category, Expense, Statement } from '../data/types';
 import type { RootStackParamList } from '../navigation';
 import { colors, formatCurrency, formatDate, parseCurrencyInput } from '../theme';
@@ -37,7 +37,7 @@ export function BudgetScreen() {
   const fixed = settings?.fixedExpenses ?? 0;
   const credit = expenses.filter((item) => item.payment === 'Crédito').reduce((sum, item) => sum + item.amount, 0);
   const variable = expenses.filter((item) => item.payment !== 'Crédito' && !item.recurring).reduce((sum, item) => sum + item.amount, 0);
-  const reserve = settings?.monthlySavings ?? goals.reduce((sum, goal) => sum + goal.monthlyContribution, 0);
+  const reserve = monthlyGoalReserve(goals, settings?.monthlySavings ?? 0);
   const available = Math.max(0, income - fixed - credit - Math.min(variable, 400) - reserve);
 
   return (
@@ -55,7 +55,7 @@ export function BudgetScreen() {
         <MoneyRow label="Gastos fixos" amount={fixed} sign="−" />
         <MoneyRow label="Cartão de crédito" amount={credit} sign="−" />
         <MoneyRow label="PIX e variáveis" amount={Math.min(variable, 400)} sign="−" />
-        <MoneyRow label="Economia mensal para a meta" amount={reserve} sign="−" />
+        <MoneyRow label="Economia mensal para as metas" amount={reserve} sign="−" />
         <View style={{ borderTopWidth: 1, borderColor: colors.border, paddingTop: 12, flexDirection: 'row', justifyContent: 'space-between' }}>
           <Text style={{ color: colors.primary, fontWeight: '700' }}>= Disponível</Text><Text style={{ color: colors.primary, fontWeight: '700', fontSize: 18 }}>{formatCurrency(available)}</Text>
         </View>
@@ -559,7 +559,8 @@ export function IncomeScreen() {
       <Field label="Nome" value={name} onChangeText={setName} />
       <Field label="Salário líquido mensal" value={income} onChangeText={setIncome} keyboardType="decimal-pad" />
       <Field label="Gastos fixos mensais" value={fixed} onChangeText={setFixed} keyboardType="decimal-pad" />
-      <Field label="Reserva mensal para metas" value={savings} onChangeText={setSavings} keyboardType="decimal-pad" />
+      <Field label="Reserva mensal para metas (só se você ainda não tiver metas)" value={savings} onChangeText={setSavings} keyboardType="decimal-pad" />
+      <Text style={{ color: colors.muted, fontSize: 11 }}>Com metas cadastradas, o app soma o aporte mensal de todas elas e ignora este valor.</Text>
       {error ? <Notice tone="amber">{error}</Notice> : null}
       <Button title="Salvar renda" onPress={() => void submit()} />
     </Screen>

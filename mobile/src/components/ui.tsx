@@ -19,6 +19,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { Card } from '../data/types';
 import type { RootStackParamList } from '../navigation';
 import { BankLogo } from './BankLogo';
+import { GoalIcon } from './GoalIcon';
 import { colors, spacing } from '../theme';
 
 export function Screen({ children, scroll = true, contentContainerStyle, ...props }: ScrollViewProps & { scroll?: boolean }) {
@@ -237,6 +238,36 @@ export function ChoiceRow({ choices, value, onChange }: { choices: string[]; val
           <Text style={[styles.choiceText, value === choice ? styles.choiceSelectedText : null]}>{choice}</Text>
         </Pressable>
       ))}
+    </View>
+  );
+}
+
+/**
+ * Chips com ícone, para escolher uma opção. Sem `label`, o chip mostra só o ícone.
+ *
+ * @param choices Opções: `key` (valor devolvido), `icon` (nome do ícone) e `label` opcional.
+ * @param value `key` da opção selecionada.
+ * @param onChange Recebe o `key` da opção tocada.
+ */
+export function IconChoiceRow({ choices, value, onChange }: { choices: Array<{ key: string; icon: string; label?: string }>; value: string; onChange: (key: string) => void }) {
+  return (
+    <View style={styles.choiceRow}>
+      {choices.map((choice) => {
+        const selected = choice.key === value;
+        return (
+          <Pressable
+            key={choice.key}
+            accessibilityRole="button"
+            accessibilityLabel={choice.label ?? choice.key}
+            accessibilityState={{ selected }}
+            onPress={() => onChange(choice.key)}
+            style={[styles.choice, selected ? styles.choiceSelected : null, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+          >
+            <GoalIcon name={choice.icon} size={16} color={selected ? colors.surface : colors.primary} />
+            {choice.label ? <Text style={[styles.choiceText, selected ? styles.choiceSelectedText : null]}>{choice.label}</Text> : null}
+          </Pressable>
+        );
+      })}
     </View>
   );
 }

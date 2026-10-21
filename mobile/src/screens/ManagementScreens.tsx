@@ -1,11 +1,11 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Alert, Platform, Pressable, Text, View } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import { CreditCard, FileText, Pencil, Plane, Plus, Trash2 } from 'lucide-react-native';
+import { CreditCard, FileText, Pencil, Plus, Trash2 } from 'lucide-react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
-import { Button, CardBox, DateField, Field, Header, Notice, PageTitle, Screen, SectionTitle } from '../components/ui';
+import { Button, CardBox, DateField, Field, Header, IconChoiceRow, Notice, PageTitle, Screen, SectionTitle } from '../components/ui';
 import { useWallet } from '../contexts/WalletContext';
 import type { Card, Goal } from '../data/types';
 import type { RootStackParamList } from '../navigation';
@@ -15,6 +15,8 @@ import { projectGoal, monthsUntil } from '../data/projection';
 import { fetchRates, type Rates } from '../services/rates';
 import { fetchBanks, searchBanks, type Bank } from '../services/banks';
 import { BankLogo } from '../components/BankLogo';
+import { GoalIcon } from '../components/GoalIcon';
+import { DEFAULT_GOAL_ICON, goalTypeOf, GOAL_TYPES, ICON_CHOICES, OTHER_GOAL } from '../data/goalTypes';
 
 type Navigation = NativeStackNavigationProp<RootStackParamList>;
 
@@ -210,7 +212,7 @@ export function GoalDetailScreen() {
       <Header back />
       <PageTitle title={goal.name} subtitle="Um passo de cada vez. Seu plano continua." />
       <CardBox style={{ backgroundColor: colors.lavender, borderWidth: 0, minHeight: 190, justifyContent: 'center', alignItems: 'center' }}>
-        <Plane size={42} color={colors.primary} />
+        <GoalIcon name={goal.icon} size={42} />
         <Text style={{ color: colors.ink, fontSize: 30, fontWeight: '700' }}>{Math.round(progress * 100)}%</Text>
         <Text style={{ color: colors.muted }}>{formatCurrency(goal.saved)} guardados de {formatCurrency(goal.target)}</Text>
         <View style={{ width: '100%', height: 7, backgroundColor: colors.surface, borderRadius: 5, overflow: 'hidden' }}><View style={{ width: `${progress * 100}%`, height: 7, backgroundColor: colors.primary }} /></View>
@@ -243,13 +245,31 @@ export function GoalFormScreen() {
   const route = useRoute<RouteProp<RootStackParamList, 'GoalForm'>>();
   const { goals, save, remove } = useWallet();
   const original = useMemo(() => goals.find((item) => item.id === route.params?.id), [goals, route.params?.id]);
-  const [name, setName] = useState(original?.name ?? '');
+  const [name, setName] = useState(original?.name ?? GOAL_TYPES[0].label);
+  // O tipo vem da lista (já com ícone) ou é "Outra": aí a pessoa escreve o nome e escolhe o ícone.
+  const [type, setType] = useState(original ? goalTypeOf(original.name, original.icon) : GOAL_TYPES[0].label);
+  const [icon, setIcon] = useState(original?.icon ?? GOAL_TYPES[0].icon);
   const [target, setTarget] = useState(String(original?.target ?? ''));
   const [saved, setSaved] = useState(String(original?.saved ?? '0'));
   const [monthly, setMonthly] = useState(String(original?.monthlyContribution ?? ''));
   const [dueDate, setDueDate] = useState(original?.dueDate ?? new Date(Date.now() + 180 * 86_400_000).toISOString().slice(0, 10));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  /** Ao trocar o tipo, ajusta o ícone e só troca o nome se ele ainda for o sugerido (ou estiver vazio). */
+  function chooseType(key: string) {
+    const nameIsSuggestion = !name.trim() || GOAL_TYPES.some((item) => item.label === name.trim());
+    setType(key);
+    if (key === OTHER_GOAL) {
+      setIcon(ICON_CHOICES.includes(icon) ? icon : DEFAULT_GOAL_ICON);
+      if (nameIsSuggestion) setName('');
+      return;
+    }
+    const chosen = GOAL_TYPES.find((item) => item.label === key);
+    if (!chosen) return;
+    setIcon(chosen.icon);
+    if (nameIsSuggestion) setName(chosen.label);
+  }
+
   async function submit() {
     const targetValue = parseCurrencyInput(target);
     const savedValue = parseCurrencyInput(saved);
@@ -259,7 +279,7 @@ export function GoalFormScreen() {
       setError('Confira nome, valores e a data desejada (AAAA-MM-DD).');
       return;
     }
-    const goal: Goal = { id: original?.id ?? makeId('goal'), kind: 'goal', name: name.trim(), target: targetValue, saved: savedValue, monthlyContribution: monthlyValue, dueDate, icon: 'Plane', updatedAt: Date.now() };
+    const goal: Goal = { id: original?.id ?? makeId('goal'), kind: 'goal', name: name.trim(), target: targetValue, saved: savedValue, monthlyContribution: monthlyValue, dueDate, icon, updatedAt: Date.now() };
     setBusy(true);
     try {
       await save(goal);
@@ -285,7 +305,21 @@ export function GoalFormScreen() {
     <Screen>
       <Header back />
       <PageTitle title={original ? 'Editar meta' : 'Criar uma meta'} subtitle="Escolha um objetivo e um ritmo que caiba na sua vida." />
-      <Field label="Nome da meta" value={name} onChangeText={setName} placeholder="Ex.: Viagem" />
+      <View style={{ gap: 8 }}>
+        <Text style={{ color: colors.ink, fontWeight: '600', fontSize: 12 }}>Tipo de meta</Text>
+        <IconChoiceRow
+          choices={[...GOAL_TYPES.map((item) => ({ key: item.label, icon: item.icon, label: item.label })), { key: OTHER_GOAL, icon: DEFAULT_GOAL_ICON, label: OTHER_GOAL }]}
+          value={type}
+          onChange={chooseType}
+        />
+      </View>
+      {type === OTHER_GOAL ? (
+        <View style={{ gap: 8 }}>
+          <Text style={{ color: colors.ink, fontWeight: '600', fontSize: 12 }}>Ícone da meta</Text>
+          <IconChoiceRow choices={ICON_CHOICES.map((item) => ({ key: item, icon: item }))} value={icon} onChange={setIcon} />
+        </View>
+      ) : null}
+      <Field label="Nome da meta" value={name} onChangeText={setName} placeholder={type === OTHER_GOAL ? 'Ex.: Curso de inglês' : 'Ex.: Viagem'} />
       <Field label="Valor desejado" value={target} onChangeText={setTarget} keyboardType="decimal-pad" />
       <Field label="Já guardado" value={saved} onChangeText={setSaved} keyboardType="decimal-pad" />
       <Field label="Aporte mensal" value={monthly} onChangeText={setMonthly} keyboardType="decimal-pad" />

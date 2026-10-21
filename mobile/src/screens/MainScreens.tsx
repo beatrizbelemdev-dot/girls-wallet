@@ -10,7 +10,6 @@ import {
   House,
   Lock,
   Pencil,
-  Plane,
   Plus,
   ShoppingBag,
   Utensils,
@@ -21,6 +20,8 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Button, CardBox, Field, Header, Notice, PageTitle, ProgressBar, Screen, SectionTitle, styles as ui } from '../components/ui';
+import { GoalIcon } from '../components/GoalIcon';
+import { monthlyGoalReserve } from '../data/budget';
 import { useWallet } from '../contexts/WalletContext';
 import type { Expense } from '../data/types';
 import type { RootStackParamList } from '../navigation';
@@ -77,9 +78,8 @@ export function HomeScreen() {
   const fixed = settings?.fixedExpenses ?? 0;
   const credit = expenses.filter((expense) => expense.payment === 'Crédito').reduce((sum, expense) => sum + expense.amount, 0);
   const variable = expenses.filter((expense) => expense.payment !== 'Crédito' && !expense.recurring).reduce((sum, expense) => sum + expense.amount, 0);
-  const savings = settings?.monthlySavings ?? 0;
+  const savings = monthlyGoalReserve(goals, settings?.monthlySavings ?? 0);
   const available = Math.max(0, income - fixed - credit - Math.min(variable, 400) - savings);
-  const goal = goals[0];
 
   return (
     <Screen>
@@ -108,21 +108,9 @@ export function HomeScreen() {
         <BudgetRow label="Gastos fixos" value={`− ${formatCurrency(fixed)}`} />
         <BudgetRow label="Cartão de crédito" value={`− ${formatCurrency(credit)}`} />
         <BudgetRow label="PIX e variáveis" value={`− ${formatCurrency(Math.min(variable, 400))}`} />
-        <BudgetRow label="Reserva para a meta" value={`− ${formatCurrency(savings)}`} />
+        <BudgetRow label="Reserva para as metas" value={`− ${formatCurrency(savings)}`} />
         <Pressable onPress={() => navigation.navigate('FixedExpenses')}><Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>Ver gastos fixos e detalhes</Text></Pressable>
       </CardBox>
-      {goal ? (
-        <Pressable onPress={() => navigation.navigate('GoalDetail', { id: goal.id })}>
-          <CardBox style={{ backgroundColor: colors.lavender, borderWidth: 0 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <Text style={{ color: colors.ink, fontSize: 16, fontWeight: '700' }}>{goal.name}</Text><Plane size={20} color={colors.primary} />
-            </View>
-            <Text style={{ color: colors.muted, fontSize: 12 }}>{formatCurrency(goal.saved)} de {formatCurrency(goal.target)} · {Math.round((goal.saved / goal.target) * 100)}% guardado</Text>
-            <ProgressBar value={goal.saved / goal.target} />
-            <Text style={{ color: colors.muted, fontSize: 11 }}>{formatCurrency(goal.monthlyContribution)}/mês · Seu plano segue de pé</Text>
-          </CardBox>
-        </Pressable>
-      ) : null}
       <CardBox>
         <SectionTitle>Atividade recente</SectionTitle>
         {expenses.slice(0, 3).map((expense) => <ExpenseRow key={expense.id} expense={expense} onPress={() => openExpense(navigation, expense)} />)}
@@ -207,7 +195,7 @@ export function GoalsScreen() {
       {goals.map((goal) => (
         <Pressable key={goal.id} onPress={() => navigation.navigate('GoalDetail', { id: goal.id })}>
           <CardBox style={{ backgroundColor: colors.lavender, borderWidth: 0 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Text style={{ color: colors.ink, fontWeight: '700', fontSize: 17 }}>{goal.name}</Text><Plane size={20} color={colors.primary} /></View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Text style={{ color: colors.ink, fontWeight: '700', fontSize: 17 }}>{goal.name}</Text><GoalIcon name={goal.icon} /></View>
             <Text style={{ color: colors.muted }}>{formatCurrency(goal.saved)} guardados de {formatCurrency(goal.target)}</Text>
             <ProgressBar value={goal.saved / goal.target} />
             <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 12 }}>{Math.round((goal.saved / goal.target) * 100)}% concluído · {formatCurrency(goal.monthlyContribution)}/mês</Text>
