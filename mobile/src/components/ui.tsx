@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Wallet } from 'lucide-react-native';
+import { ArrowLeft, ChevronLeft, ChevronRight, Wallet } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { Card } from '../data/types';
@@ -175,6 +175,40 @@ export function DateField({ label, value, onChange }: { label: string; value: st
           <Text style={{ color: colors.ink }}>{date.toLocaleDateString('pt-BR')}</Text>
         </Pressable>
       )}
+    </View>
+  );
+}
+
+const MONTH_NAMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+/** Move um mês no formato AAAA-MM; `step` pode ser negativo. */
+function shiftMonth(value: string, step: number): string {
+  const [year, month] = value.split('-').map(Number);
+  const date = new Date(year, month - 1 + step, 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * Seletor de mês e ano com setas para voltar e avançar, no lugar de digitar `AAAA-MM`.
+ *
+ * @param value Mês selecionado, no formato AAAA-MM.
+ * @param onChange Recebe o novo mês, no mesmo formato.
+ */
+export function MonthField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const [year, month] = /^\d{4}-(0[1-9]|1[0-2])$/.test(value) ? value.split('-').map(Number) : [new Date().getFullYear(), new Date().getMonth() + 1];
+  const current = `${year}-${String(month).padStart(2, '0')}`;
+  return (
+    <View style={styles.field}>
+      <Text style={styles.label}>{label}</Text>
+      <View style={[styles.input, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Mês anterior" hitSlop={10} onPress={() => onChange(shiftMonth(current, -1))}>
+          <ChevronLeft size={22} color={colors.primary} />
+        </Pressable>
+        <Text style={{ color: colors.ink, fontWeight: '600' }}>{MONTH_NAMES[month - 1]} de {year}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="Próximo mês" hitSlop={10} onPress={() => onChange(shiftMonth(current, 1))}>
+          <ChevronRight size={22} color={colors.primary} />
+        </Pressable>
+      </View>
     </View>
   );
 }

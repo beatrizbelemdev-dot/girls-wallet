@@ -15,9 +15,9 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
-import { Button, CardBox, CardChoiceRow, ChoiceRow, DateField, Field, Header, Notice, PageTitle, ProgressBar, Screen, SectionTitle } from '../components/ui';
+import { Button, CardBox, CardChoiceRow, ChoiceRow, DateField, Field, Header, MonthField, Notice, PageTitle, ProgressBar, Screen, SectionTitle } from '../components/ui';
 import { useWallet } from '../contexts/WalletContext';
-import { isOverLimit } from '../data/budget';
+import { currentMonth, isOverLimit } from '../data/budget';
 import type { Category, Expense, Statement } from '../data/types';
 import type { RootStackParamList } from '../navigation';
 import { colors, formatCurrency, formatDate, parseCurrencyInput } from '../theme';
@@ -311,7 +311,7 @@ export function ImportStatementScreen() {
   const navigation = useNavigation<Navigation>();
   const { cards, categories } = useWallet();
   const [cardId, setCardId] = useState(cards[0]?.id ?? '');
-  const [period, setPeriod] = useState('2026-10');
+  const [period, setPeriod] = useState(currentMonth());
   const [file, setFile] = useState<Awaited<ReturnType<typeof chooseInvoicePdf>>>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -355,7 +355,7 @@ export function ImportStatementScreen() {
       <SectionTitle>Cartões cadastrados</SectionTitle>
       {cards.length ? <CardChoiceRow cards={cards} value={cardId} onChange={setCardId} /> : <Notice>Cadastre um cartão antes de importar a fatura.</Notice>}
       <Button title="Adicionar cartão" variant="secondary" onPress={() => navigation.navigate('AddCard')} />
-      <Field label="Período da fatura (AAAA-MM)" value={period} onChangeText={setPeriod} placeholder="2026-10" />
+      <MonthField label="Período da fatura" value={period} onChange={setPeriod} />
       <CardBox style={{ backgroundColor: colors.roseLight, borderStyle: 'dashed', borderColor: colors.primary }}>
         <View style={{ alignItems: 'center', gap: 8 }}><FileText size={27} color={colors.primary} /><Text style={{ color: colors.ink, fontWeight: '700' }}>{file?.name ?? 'Nenhum arquivo selecionado'}</Text><Text style={{ color: colors.muted, fontSize: 12 }}>{file ? `${Math.round((file.size ?? 0) / 1024)} KB · PDF` : 'Selecione um PDF digital com texto selecionável.'}</Text></View>
         <Button title={file ? 'Selecionar outro arquivo' : 'Selecionar arquivo PDF'} variant="secondary" onPress={() => void pickFile()} />

@@ -18,6 +18,7 @@ export interface ParsedStatement {
 }
 
 const apiUrl = process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, '');
+const ANALYZE_TIMEOUT_MS = 30000;
 
 export async function chooseInvoicePdf(): Promise<DocumentPicker.DocumentPickerAsset | null> {
   const result = await DocumentPicker.getDocumentAsync({
@@ -44,15 +45,25 @@ export async function analyzeInvoice(
   form.append('period', period);
   form.append('categories', JSON.stringify(categories.map(({ name }) => name)));
 
+  // Sem limite de tempo, um servidor inalcançável (IP errado, firewall) deixa a tela "carregando"
+  // por mais de um minuto, até o sistema desistir.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ANALYZE_TIMEOUT_MS);
   let response: Response;
   try {
     response = await fetch(`${apiUrl}/api/statements/analyze`, {
       method: 'POST',
       headers: currentUser ? { Authorization: `Bearer ${await currentUser.getIdToken()}` } : {},
       body: form,
+      signal: controller.signal,
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('A API de faturas não respondeu a tempo. Confira se o servidor está rodando e se o IP em EXPO_PUBLIC_API_URL é o do seu computador.');
+    }
     throw new Error('Não foi possível conectar à API de faturas. Confira a conexão e EXPO_PUBLIC_API_URL.');
+  } finally {
+    clearTimeout(timer);
   }
   const payload: unknown = await response.json().catch(() => undefined);
   if (!response.ok) {
