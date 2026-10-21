@@ -1,3 +1,7 @@
+/**
+ * Mantém os dados locais da carteira disponíveis para as telas e coordena paginação,
+ * alertas de orçamento e sincronização quando uma conta autenticada está online.
+ */
 import * as Network from 'expo-network';
 import * as Notifications from 'expo-notifications';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';

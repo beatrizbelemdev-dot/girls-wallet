@@ -276,7 +276,7 @@ export const styles = StyleSheet.create({
   screenContent: { paddingHorizontal: spacing.page, paddingTop: 8, paddingBottom: 34, gap: 18 },
   fill: { flex: 1 },
   header: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', position: 'relative' },
-  headerStart: { minWidth: 32, zIndex: 1 },
+  headerStart: { minWidth: 32, flexDirection: 'row', alignItems: 'center', gap: 16, zIndex: 1 },
   headerTitleRow: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   headerTitleSpacer: { height: 1 },
   headerTitle: { color: colors.primary, fontWeight: '700', fontSize: 19 },

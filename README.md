@@ -82,6 +82,8 @@ flowchart TD
   APP --> AUTH[Firebase Authentication]
   APP --> LOCAL[SQLite por conta]
   APP -->|online: sincroniza registros| FS[(Firestore)]
+  APP -->|consulta de taxas públicas| RATES[BrasilAPI]
+  RATES -->|CDI, Selic e IPCA| GOAL[Projeção da meta]
   APP -->|PDF selecionado| API[Node / Express]
   API --> PDF[Extração de texto PDF]
   PDF --> PARSER[Parser e sugestão de categoria]
@@ -93,10 +95,32 @@ flowchart TD
 
 - Cada conta e o modo de demonstração usam arquivos SQLite separados.
 - Dados criados offline permanecem no dispositivo e são reconciliados com `users/{uid}/records` quando a conexão retorna. Em conflito, prevalece o registro com `updatedAt` mais recente.
+- O SQLite é a fonte de leitura e gravação da carteira no dispositivo; a sincronização com o Firestore é iniciada quando há uma identidade autenticada e conexão de rede. Exclusões são registradas como tombstones para serem sincronizadas.
+- O módulo de taxas consulta a BrasilAPI diretamente, sem chave, e a projeção da meta usa CDI como estimativa de rendimento composto. A consulta depende de internet; se falhar, o app informa a indisponibilidade e mantém os demais dados da meta, sem exibir projeção de rendimento. Taxas e projeções são informativas, não garantias de retorno.
 - As regras em [`firebase/firestore.rules`](./firebase/firestore.rules) restringem cada conta ao próprio caminho.
 - O PDF é analisado em memória na API; o arquivo original não é persistido pelo servidor. Nenhuma compra extraída é gravada antes da confirmação no app.
-- A extração genérica atende layouts digitais que apresentem compras em linhas com data, descrição e valor. Layouts de emissores variam; adapte/adicone regras de parser para formatos não reconhecidos. O app informa a falha e não salva uma análise vazia.
+- A extração genérica atende layouts digitais que apresentem compras em linhas com data, descrição e valor. Layouts de emissores variam; adapte/adicione regras de parser para formatos não reconhecidos. O app informa a falha e não salva uma análise vazia.
 - Alertas locais funcionam no dispositivo. Push remoto exige configuração de Firebase Admin, token FCM e credenciais nativas da plataforma.
+
+### Organização dos módulos
+
+- `mobile/App.tsx`: compõe os provedores globais, observa o estado de autenticação e seleciona o escopo da carteira.
+- `mobile/src/navigation.tsx`: declara os fluxos de autenticação, abas principais e telas de detalhe.
+- `mobile/src/contexts/WalletContext.tsx`: expõe operações e estado da carteira às telas; também observa a rede e coordena sincronização e alertas de orçamento.
+- `mobile/src/data/`: contém os tipos dos registros, acesso SQLite, regras de orçamento e cálculos puros de projeção.
+- `mobile/src/services/`: concentra integrações externas — Firebase/Auth/Firestore, BrasilAPI e análise de faturas.
+- `mobile/src/screens/`: implementa as telas e os fluxos de interface.
+- `server/src/`: fornece a API Express para análise de PDF e envio de notificações push.
+
+## Segurança e privacidade
+
+- **Autenticação e nuvem:** o Firebase Authentication valida as contas. As regras do Firestore permitem leitura e escrita somente quando o UID autenticado corresponde ao UID do caminho do documento. Revise e publique as regras de [`firebase/firestore.rules`](./firebase/firestore.rules) junto com qualquer alteração na estrutura de dados.
+- **Credenciais:** a persistência de autenticação e o token de ID são guardados com `expo-secure-store`. As variáveis `EXPO_PUBLIC_*` são incluídas no app e não são segredos; a chave privada de Firebase Admin deve existir somente no ambiente seguro do servidor e nunca no app ou no repositório.
+- **Dados no aparelho:** registros da carteira ficam em bancos SQLite separados por conta/modo de demonstração, no armazenamento privado do app. O projeto não habilita criptografia própria para esses bancos; proteja o dispositivo e considere isso antes de armazenar informações sensíveis. Sair da conta não é uma operação de apagamento dos dados locais.
+- **Importação de fatura:** o PDF escolhido é enviado à URL configurada em `EXPO_PUBLIC_API_URL`, limitado a 10 MB e processado em memória pela API. O arquivo não é persistido pelo servidor; transações só são salvas depois da revisão e confirmação no app. Em produção, mantenha `ALLOW_ANONYMOUS_ANALYZE` desativado e exija autenticação.
+- **Conexões:** use HTTPS na API publicada. Restrinja `CORS_ORIGIN` aos clientes esperados; CORS não substitui autenticação. Em desenvolvimento, `ALLOW_ANONYMOUS_ANALYZE=true` existe apenas para facilitar a demonstração local.
+- **Serviço de taxas:** a consulta à BrasilAPI envia somente uma requisição pública de taxas, sem dados da carteira ou identificadores pessoais. Ela requer internet e não é uma fonte garantida de disponibilidade.
+- **Notificações:** o push usa token Firebase autenticado; tokens de dispositivo são armazenados no caminho do usuário no Firestore. O alerta local é apresentado pelo próprio dispositivo conforme a permissão do sistema.
 
 ## Requisitos
 

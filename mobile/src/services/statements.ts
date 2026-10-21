@@ -1,3 +1,4 @@
+/** Seleciona um PDF no dispositivo e solicita sua análise à API; a gravação só ocorre após revisão. */
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
 import type { Category } from '../data/types';
