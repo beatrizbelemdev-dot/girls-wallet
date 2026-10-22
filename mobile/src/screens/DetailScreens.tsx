@@ -32,10 +32,10 @@ function makeId(prefix: string): string {
 
 export function BudgetScreen() {
   const navigation = useNavigation<Navigation>();
-  const { settings, expenses, goals, categories, monthlySpent } = useWallet();
+  const { settings, expenses, goals, categories, monthlySpent, monthlyCreditSpent } = useWallet();
   const income = settings?.monthlyIncome ?? 0;
   const fixed = settings?.fixedExpenses ?? 0;
-  const credit = expenses.filter((item) => item.payment === 'Crédito').reduce((sum, item) => sum + item.amount, 0);
+  const credit = monthlyCreditSpent;
   const variable = expenses.filter((item) => item.payment !== 'Crédito' && !item.recurring).reduce((sum, item) => sum + item.amount, 0);
   const reserve = monthlyGoalReserve(goals, settings?.monthlySavings ?? 0);
   const available = Math.max(0, income - fixed - credit - Math.min(variable, 400) - reserve);

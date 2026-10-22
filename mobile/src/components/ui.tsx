@@ -195,9 +195,10 @@ function shiftMonth(value: string, step: number): string {
  * @param value Mês selecionado, no formato AAAA-MM.
  * @param onChange Recebe o novo mês, no mesmo formato.
  */
-export function MonthField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+export function MonthField({ label, value, onChange, maxMonth }: { label: string; value: string; onChange: (value: string) => void; maxMonth?: string }) {
   const [year, month] = /^\d{4}-(0[1-9]|1[0-2])$/.test(value) ? value.split('-').map(Number) : [new Date().getFullYear(), new Date().getMonth() + 1];
   const current = `${year}-${String(month).padStart(2, '0')}`;
+  const canAdvance = !maxMonth || current < maxMonth;
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
@@ -206,8 +207,8 @@ export function MonthField({ label, value, onChange }: { label: string; value: s
           <ChevronLeft size={22} color={colors.primary} />
         </Pressable>
         <Text style={{ color: colors.ink, fontWeight: '600' }}>{MONTH_NAMES[month - 1]} de {year}</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="Próximo mês" hitSlop={10} onPress={() => onChange(shiftMonth(current, 1))}>
-          <ChevronRight size={22} color={colors.primary} />
+        <Pressable accessibilityRole="button" accessibilityLabel="Próximo mês" accessibilityState={{ disabled: !canAdvance }} disabled={!canAdvance} hitSlop={10} onPress={() => onChange(shiftMonth(current, 1))}>
+          <ChevronRight size={22} color={canAdvance ? colors.primary : colors.muted} />
         </Pressable>
       </View>
     </View>

@@ -19,9 +19,9 @@ import {
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Button, CardBox, Field, Header, Notice, PageTitle, ProgressBar, Screen, SectionTitle, styles as ui } from '../components/ui';
+import { Button, CardBox, Field, Header, MonthField, Notice, PageTitle, ProgressBar, Screen, SectionTitle, styles as ui } from '../components/ui';
 import { GoalIcon } from '../components/GoalIcon';
-import { monthlyGoalReserve } from '../data/budget';
+import { currentMonth, expenseMonth, expensesForMonth, formatMonth, monthlyGoalReserve } from '../data/budget';
 import { useWallet } from '../contexts/WalletContext';
 import type { Expense } from '../data/types';
 import type { RootStackParamList } from '../navigation';
@@ -72,11 +72,11 @@ function ExpenseRow({ expense, onPress, onDelete }: { expense: Expense; onPress:
 
 export function HomeScreen() {
   const navigation = useNavigation<Navigation>();
-  const { settings, goals, expenses, offline, syncError, demoMode } = useWallet();
+  const { settings, goals, expenses, monthlyCreditSpent, offline, syncError, demoMode } = useWallet();
   const accountName = useDisplayName();
   const income = settings?.monthlyIncome ?? 0;
   const fixed = settings?.fixedExpenses ?? 0;
-  const credit = expenses.filter((expense) => expense.payment === 'Crédito').reduce((sum, expense) => sum + expense.amount, 0);
+  const credit = monthlyCreditSpent;
   const variable = expenses.filter((expense) => expense.payment !== 'Crédito' && !expense.recurring).reduce((sum, expense) => sum + expense.amount, 0);
   const savings = monthlyGoalReserve(goals, settings?.monthlySavings ?? 0);
   const available = Math.max(0, income - fixed - credit - Math.min(variable, 400) - savings);
@@ -125,15 +125,17 @@ function BudgetRow({ label, value }: { label: string; value: string }) {
 
 export function ExpenseListScreen() {
   const navigation = useNavigation<Navigation>();
-  const { expenses, loadMoreExpenses, hasMoreExpenses, remove } = useWallet();
+  const { allExpenses, statements, remove } = useWallet();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('Todas');
-  const filtered = useMemo(() => expenses.filter((expense) => {
+  const [month, setMonth] = useState(currentMonth);
+  const monthExpenses = useMemo(() => expensesForMonth(allExpenses, statements, month), [allExpenses, statements, month]);
+  const filtered = useMemo(() => monthExpenses.filter((expense) => {
     const matchesFilter = filter === 'Todas' || (filter === 'Fixas' ? expense.recurring : !expense.recurring);
     const matchesQuery = `${expense.description} ${expense.category}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR'));
     return matchesFilter && matchesQuery;
-  }), [expenses, filter, query]);
-  const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+  }), [monthExpenses, filter, query]);
+  const total = monthExpenses.reduce((sum, expense) => sum + expense.amount, 0);
 
   function confirmDelete(expense: Expense) {
     Alert.alert('Excluir despesa?', `${expense.description} será removida deste dispositivo.`, [
@@ -149,7 +151,8 @@ export function ExpenseListScreen() {
   return (
     <Screen>
       <Header action={<Pressable onPress={() => navigation.navigate('Notifications')}><Bell size={21} color={colors.ink} /></Pressable>} />
-      <PageTitle title="Seus gastos, de perto." subtitle="Outubro de 2026" />
+      <PageTitle title="Seus gastos, de perto." subtitle={formatMonth(month)} />
+      <MonthField label="Mês das despesas" value={month} onChange={setMonth} maxMonth={currentMonth()} />
       <CardBox style={{ backgroundColor: colors.roseLight, borderWidth: 0 }}>
         <Text style={{ color: colors.muted, fontSize: 11 }}>Despesas do mês · fixas + cartão + variáveis</Text>
         <Text style={{ color: colors.ink, fontSize: 29, fontWeight: '700' }}>{formatCurrency(total)}</Text>
@@ -176,8 +179,7 @@ export function ExpenseListScreen() {
             />
           ))}
         </CardBox>
-      ) : <Notice>Nenhuma despesa corresponde à busca.</Notice>}
-      {hasMoreExpenses ? <Button title="Carregar mais" variant="secondary" onPress={() => void loadMoreExpenses()} /> : null}
+      ) : <Notice>Nenhuma despesa encontrada em {formatMonth(month)} para os filtros selecionados.</Notice>}
       <Button title="Adicionar despesa" icon={<Plus size={18} color="white" />} onPress={() => navigation.navigate('ExpenseForm')} />
       <Button title="Categorias e limites" variant="secondary" onPress={() => navigation.navigate('Categories')} />
       <Button title="Cartões e faturas" variant="secondary" onPress={() => navigation.navigate('Cards')} />
@@ -209,22 +211,24 @@ export function GoalsScreen() {
 }
 
 export function ReportsScreen() {
-  const { expenses, categories } = useWallet();
+  const { allExpenses, statements, categories } = useWallet();
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const statementPeriods = useMemo(() => new Map(statements.map((statement) => [statement.id, statement.period])), [statements]);
+  const monthExpenses = useMemo(() => expensesForMonth(allExpenses, statements, selectedMonth), [allExpenses, statements, selectedMonth]);
   const categoryTotals = categories.map((category) => ({
     ...category,
-    amount: expenses.filter((expense) => expense.category === category.name).reduce((sum, expense) => sum + expense.amount, 0),
+    amount: monthExpenses.filter((expense) => expense.category === category.name).reduce((sum, expense) => sum + expense.amount, 0),
   })).sort((first, second) => second.amount - first.amount);
-  const total = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const total = monthExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   const highest = Math.max(1, ...categoryTotals.map((item) => item.amount));
-  const byMonth = expenses.reduce<Record<string, number>>((totals, expense) => {
-    const month = expense.date.slice(0, 7);
+  const byMonth = allExpenses.reduce<Record<string, number>>((totals, expense) => {
+    const month = expenseMonth(expense, statementPeriods);
     totals[month] = (totals[month] ?? 0) + expense.amount;
     return totals;
   }, {});
-  const latestMonth = Object.keys(byMonth).sort().at(-1) ?? '2026-10';
-  const [latestYear, latestMonthNumber] = latestMonth.split('-').map(Number);
+  const [selectedYear, selectedMonthNumber] = selectedMonth.split('-').map(Number);
   const months = Array.from({ length: 6 }, (_unused, index) => {
-    const date = new Date(latestYear, latestMonthNumber - 1 - (5 - index), 1);
+    const date = new Date(selectedYear, selectedMonthNumber - 1 - (5 - index), 1);
     const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
     return { key, label: date.toLocaleDateString('pt-BR', { month: 'short' }), value: byMonth[key] ?? 0 };
   });
@@ -233,11 +237,12 @@ export function ReportsScreen() {
   return (
     <Screen>
       <Header />
-      <PageTitle title="Seu mês em perspectiva." subtitle="Outubro de 2026 · Análises dos seus gastos" />
+      <PageTitle title="Seu mês em perspectiva." subtitle={`${formatMonth(selectedMonth)} · Análises dos seus gastos`} />
+      <MonthField label="Mês do relatório" value={selectedMonth} onChange={setSelectedMonth} maxMonth={currentMonth()} />
       <CardBox style={{ backgroundColor: colors.rose, borderWidth: 0 }}>
         <Text style={{ color: colors.primary, fontWeight: '600' }}>Total de despesas registradas</Text>
         <Text style={{ color: colors.ink, fontSize: 31, fontWeight: '700' }}>{formatCurrency(total)}</Text>
-        <Text style={{ color: colors.muted, fontSize: 12 }}>{expenses.length} lançamentos · dados armazenados no aparelho</Text>
+        <Text style={{ color: colors.muted, fontSize: 12 }}>{monthExpenses.length} lançamentos · dados armazenados no aparelho</Text>
       </CardBox>
       <CardBox>
         <SectionTitle>Gastos por categoria</SectionTitle>
@@ -263,7 +268,7 @@ export function ReportsScreen() {
         </View>
         <Text style={{ color: colors.muted, fontSize: 11 }}>Meses sem lançamentos aparecem sem valor registrado.</Text>
       </CardBox>
-      <Notice>Os relatórios usam os lançamentos salvos no app. Importe e revise sua fatura para completar os dados do mês.</Notice>
+      <Notice>Resumo de {formatMonth(selectedMonth)}. O gráfico mostra esse mês e os cinco anteriores.</Notice>
     </Screen>
   );
 }

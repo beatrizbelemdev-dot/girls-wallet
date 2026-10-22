@@ -26,12 +26,13 @@ function makeId(prefix: string): string {
 
 export function CardsScreen() {
   const navigation = useNavigation<Navigation>();
-  const { cards, statements, expenses, remove } = useWallet();
+  const { cards, statements, allExpenses, remove } = useWallet();
   const [selectedCardId, setSelectedCardId] = useState(cards[0]?.id ?? '');
+  const [selectedStatementId, setSelectedStatementId] = useState('');
   const selectedCard = cards.find((card) => card.id === selectedCardId) ?? cards[0];
   const cardStatements = statements.filter((statement) => statement.cardId === selectedCard?.id);
-  const selectedStatement = cardStatements[0];
-  const statementExpenses = expenses.filter((expense) => expense.statementId === selectedStatement?.id);
+  const selectedStatement = cardStatements.find((statement) => statement.id === selectedStatementId) ?? cardStatements[0];
+  const statementExpenses = allExpenses.filter((expense) => expense.statementId === selectedStatement?.id);
 
   function deleteCard(card: Card) {
     Alert.alert('Excluir cartão?', `${card.name} e a configuração local do cartão serão removidos.`, [
@@ -50,32 +51,48 @@ export function CardsScreen() {
       <PageTitle title="Cartões e faturas" subtitle="Gerencie cartões, importe faturas e acompanhe cada conta separadamente." />
       <SectionTitle>Meus cartões</SectionTitle>
       {cards.map((card) => (
-        <Pressable key={card.id} onPress={() => setSelectedCardId(card.id)}>
-          <CardBox style={{ borderColor: selectedCard?.id === card.id ? colors.primary : colors.border, backgroundColor: selectedCard?.id === card.id ? colors.roseLight : colors.surface }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <CreditCard size={20} color={colors.primary} />
-              <View style={{ flex: 1 }}><Text style={{ color: colors.ink, fontWeight: '700' }}>{card.name}</Text><Text style={{ color: colors.muted, fontSize: 11 }}>{card.lastFour ? `•••• ${card.lastFour} · ` : ''}fecha dia {card.closingDay} · vence dia {card.dueDay}</Text></View>
-              <Pressable onPress={() => navigation.navigate('AddCard', { id: card.id })}><Pencil size={17} color={colors.primary} /></Pressable>
-              <Pressable onPress={() => deleteCard(card)}><Trash2 size={17} color={colors.muted} /></Pressable>
-            </View>
-          </CardBox>
-        </Pressable>
+        <CardBox key={card.id} style={{ borderColor: selectedCard?.id === card.id ? colors.primary : colors.border, backgroundColor: selectedCard?.id === card.id ? colors.roseLight : colors.surface, paddingVertical: 14 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <Pressable onPress={() => setSelectedCardId(card.id)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              {card.logoUrl ? <BankLogo uri={card.logoUrl} size={38} /> : <CreditCard size={22} color={colors.primary} />}
+              <View style={{ flex: 1, gap: 3 }}>
+                <Text style={{ color: colors.ink, fontWeight: '700' }}>{card.name}</Text>
+                <Text style={{ color: colors.muted, fontSize: 12 }}>{card.lastFour ? `•••• ${card.lastFour} · ` : ''}fecha dia {card.closingDay} · vence dia {card.dueDay}</Text>
+              </View>
+            </Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel={`Editar ${card.name}`} hitSlop={8} onPress={() => navigation.navigate('AddCard', { id: card.id })}><Pencil size={18} color={colors.primary} /></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel={`Excluir ${card.name}`} hitSlop={8} onPress={() => deleteCard(card)}><Trash2 size={18} color={colors.muted} /></Pressable>
+          </View>
+        </CardBox>
       ))}
       <Button title="Novo cartão" variant="secondary" icon={<Plus size={17} color={colors.primary} />} onPress={() => navigation.navigate('AddCard')} />
-      <SectionTitle action={<Button title="Importar fatura" onPress={() => navigation.navigate('ImportStatement')} />}>Faturas de {selectedCard?.name ?? 'cartão'}</SectionTitle>
+      <SectionTitle>Faturas de {selectedCard?.name ?? 'cartão'}</SectionTitle>
+      {selectedCard ? (
+        <View style={{ alignItems: 'center' }}>
+          <View style={{ width: '80%' }}>
+            <Button title="Importar fatura" onPress={() => navigation.navigate('ImportStatement')} />
+          </View>
+        </View>
+      ) : null}
       {cardStatements.map((statement) => (
-        <CardBox key={statement.id}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}><FileText size={19} color={colors.primary} /><Text style={{ color: colors.ink, fontWeight: '700', flex: 1, marginLeft: 9 }}>{statement.period}</Text><Text style={{ color: colors.ink, fontWeight: '700' }}>{formatCurrency(statement.total)}</Text></View>
-          <Text style={{ color: colors.muted, fontSize: 12 }}>{statement.fileName} · importada em {formatDate(statement.importedAt.slice(0, 10))}</Text>
-        </CardBox>
+        <Pressable key={statement.id} accessibilityRole="button" accessibilityState={{ selected: selectedStatement?.id === statement.id }} onPress={() => setSelectedStatementId(statement.id)}>
+          <CardBox style={{ borderColor: selectedStatement?.id === statement.id ? colors.primary : colors.border, backgroundColor: selectedStatement?.id === statement.id ? colors.roseLight : colors.surface, paddingVertical: 15 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <FileText size={20} color={colors.primary} />
+              <Text style={{ color: colors.ink, fontWeight: '700', flex: 1 }}>{statement.period}</Text>
+              <Text style={{ color: colors.ink, fontWeight: '700' }}>{formatCurrency(statement.total)}</Text>
+            </View>
+            <Text numberOfLines={1} style={{ color: colors.muted, fontSize: 12 }}>{statement.fileName} · importada em {formatDate(statement.importedAt.slice(0, 10))}</Text>
+          </CardBox>
+        </Pressable>
       ))}
       {!selectedCard ? <Notice>Cadastre um cartão para relacionar e acompanhar suas faturas.</Notice> : null}
       {selectedCard && !cardStatements.length ? <Notice>Nenhuma fatura importada para este cartão.</Notice> : null}
       {selectedStatement ? (
         <CardBox>
-          <SectionTitle>Lançamentos da fatura</SectionTitle>
+          <SectionTitle>Lançamentos · {selectedStatement.period}</SectionTitle>
           {statementExpenses.map((expense) => <View key={expense.id} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 7 }}><View><Text style={{ color: colors.ink, fontWeight: '600' }}>{expense.description}</Text><Text style={{ color: colors.muted, fontSize: 11 }}>{expense.category} · {formatDate(expense.date)}</Text></View><Text style={{ color: colors.ink, fontWeight: '700' }}>{formatCurrency(expense.amount)}</Text></View>)}
-          <Text style={{ color: colors.muted, fontSize: 11 }}>{statementExpenses.length} de {statementExpenses.length} lançamentos · {formatCurrency(selectedStatement.total)}</Text>
+          {!statementExpenses.length ? <Notice>Os lançamentos desta fatura não estão disponíveis neste aparelho.</Notice> : <Text style={{ color: colors.muted, fontSize: 11 }}>{statementExpenses.length} lançamentos · {formatCurrency(selectedStatement.total)}</Text>}
         </CardBox>
       ) : null}
     </Screen>

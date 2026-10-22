@@ -6,11 +6,12 @@ import * as Network from 'expo-network';
 import * as Notifications from 'expo-notifications';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
-import { currentMonth, isOverLimit, spentByCategory } from '../data/budget';
+import { creditSpentForMonth, currentMonth, isOverLimit, spentByCategory } from '../data/budget';
 import {
   allRecordsPage,
   deleteRecord,
   listAllExpenses,
+  listAllStatements,
   listRecords,
   saveRecords,
 } from '../data/database';
@@ -19,9 +20,12 @@ import { sendBudgetAlert, syncRecords } from '../services/firebase';
 
 interface WalletContextValue {
   expenses: Expense[];
+  allExpenses: Expense[];
   categories: Category[];
   /** Gasto do mês atual por nome de categoria, somando todas as despesas (não só a página carregada). */
   monthlySpent: Record<string, number>;
+  /** Gastos de crédito do mês atual, usando o período da fatura para compras importadas. */
+  monthlyCreditSpent: number;
   goals: Goal[];
   cards: Card[];
   statements: Statement[];
@@ -45,7 +49,9 @@ const PAGE_SIZE = 20;
 
 export function WalletProvider({ children, scope = 'demo' }: React.PropsWithChildren<{ scope?: string }>) {
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [allExpenses, setAllExpenses] = useState<Expense[]>([]);
   const [monthlySpent, setMonthlySpent] = useState<Record<string, number>>({});
+  const [monthlyCreditSpent, setMonthlyCreditSpent] = useState(0);
   const [categories, setCategories] = useState<Category[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
@@ -58,9 +64,10 @@ export function WalletProvider({ children, scope = 'demo' }: React.PropsWithChil
   const [syncUid, setSyncUid] = useState<string>();
 
   const refresh = useCallback(async () => {
-    const [nextExpenses, allExpenses, nextCategories, nextGoals, nextCards, nextStatements, nextSettings] = await Promise.all([
+    const [nextExpenses, allExpensesFromDb, allStatements, nextCategories, nextGoals, nextCards, nextStatements, nextSettings] = await Promise.all([
       listRecords<Expense>('expense', 0, PAGE_SIZE, scope),
       listAllExpenses(scope),
+      listAllStatements(scope),
       listRecords<Category>('category', 0, 100, scope),
       listRecords<Goal>('goal', 0, 100, scope),
       listRecords<Card>('card', 0, 100, scope),
@@ -68,7 +75,9 @@ export function WalletProvider({ children, scope = 'demo' }: React.PropsWithChil
       listRecords<Settings>('settings', 0, 1, scope),
     ]);
     setExpenses(nextExpenses);
-    setMonthlySpent(spentByCategory(allExpenses));
+    setAllExpenses(allExpensesFromDb.sort((first, second) => second.date.localeCompare(first.date) || second.updatedAt - first.updatedAt));
+    setMonthlySpent(spentByCategory(allExpensesFromDb));
+    setMonthlyCreditSpent(creditSpentForMonth(allExpensesFromDb, allStatements));
     setCategories(nextCategories);
     setGoals(nextGoals);
     setCards(nextCards);
@@ -199,8 +208,10 @@ export function WalletProvider({ children, scope = 'demo' }: React.PropsWithChil
 
   const value = useMemo<WalletContextValue>(() => ({
     expenses,
+    allExpenses,
     categories,
     monthlySpent,
+    monthlyCreditSpent,
     goals,
     cards,
     statements,
@@ -217,7 +228,7 @@ export function WalletProvider({ children, scope = 'demo' }: React.PropsWithChil
     setSyncIdentity: setSyncUid,
     clearSyncError: () => setSyncError(''),
     demoMode: scope === 'demo',
-  }), [cards, categories, expenses, monthlySpent, goals, hasMoreExpenses, loadMoreExpenses, loading, offline, refresh, remove, save, saveMany, scope, settings, statements, syncError]);
+  }), [allExpenses, cards, categories, expenses, monthlyCreditSpent, monthlySpent, goals, hasMoreExpenses, loadMoreExpenses, loading, offline, refresh, remove, save, saveMany, scope, settings, statements, syncError]);
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
 }

@@ -115,6 +115,14 @@ export async function listAllExpenses(scope = 'demo'): Promise<import('./types')
   return rows.map((row) => JSON.parse(row.payload) as import('./types').Expense);
 }
 
+export async function listAllStatements(scope = 'demo'): Promise<import('./types').Statement[]> {
+  const db = await database(scope);
+  const rows = await db.getAllAsync<{ payload: string }>(
+    "SELECT payload FROM wallet_records WHERE kind = 'statement' AND deleted_at IS NULL",
+  );
+  return rows.map((row) => JSON.parse(row.payload) as import('./types').Statement);
+}
+
 export async function getAllRecords(scope = 'demo'): Promise<Array<{ record: WalletRecord; deletedAt: number | null }>> {
   const db = await database(scope);
   const rows = await db.getAllAsync<{ payload: string; deleted_at: number | null }>(
